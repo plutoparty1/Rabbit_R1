@@ -20,15 +20,50 @@ PC 없이 래빗에서 실행하는 Spotify 리모컨입니다. 재생 중인 �
 
 앱 주소: https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
 
-1. [Spotify 개발자 페이지](https://developer.spotify.com/dashboard)에서 Premium 계정으로 로그인하고 Web API 앱을 등록합니다.
-2. Redirect URI에 `https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/`를 정확히 등록합니다. 끝의 `/`도 포함합니다.
-3. 제공된 **Client ID**는 연결 설정에 기본값으로 입력되어 있습니다. 다른 앱을 사용할 때만 변경합니다. Client Secret은 사용하지 않습니다.
+1. 기존 Client ID를 사용할 경우 앱 소유자에게 Spotify 사용자 허용 목록 등록을 요청합니다. 본인 앱을 사용할 경우 [Spotify 개발자 페이지](https://developer.spotify.com/dashboard)에서 Premium 계정으로 로그인하고 Web API 앱을 등록합니다.
+2. 본인 앱의 Redirect URI에 `https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/`를 정확히 등록합니다. 끝의 `/`도 포함합니다. 직접 배포했다면 연결 설정에 표시되는 자신의 배포 주소를 등록합니다.
+3. 기존 **Client ID**는 연결 설정에 기본값으로 입력되어 있습니다. 본인 앱을 사용할 때는 발급받은 Client ID로 변경합니다. Client Secret은 사용하지 않습니다.
 4. 래빗 Creation에서 Spotify 로그인과 재생 상태 읽기·제어 동의를 진행합니다.
 5. 휴대폰·PC·스피커의 Spotify에서 곡을 재생합니다. 래빗 앱에 현재 곡이 표시됩니다.
 
-다른 계정으로 사용하는 경우 개발자 앱의 사용자 허용 목록에 해당 계정을 추가해야 합니다. Client ID 연결은 완료되었고 Spotify 로그인은 아직 확인되지 않았습니다. 래빗 WebView의 실제 로그인과 보안 저장소 동작도 기기 검증이 필요합니다.
+Spotify 로그인·재실행 로그인 유지는 r6에서 사용자 실기 확인을 받았습니다. 다만 다른 사용자 계정의 로그인과 최신 코드의 래빗 WebView 동작까지 검증했다는 뜻은 아닙니다.
 
-사용자 선택에 따라 사이트는 비공개로 유지합니다. 래빗에서도 소유자 ChatGPT 로그인이 필요합니다. 사용자는 r6에서 Spotify 연결·재실행 로그인 유지·가사 휠 탐색·현재 줄 따라가기·하단 버튼 표시가 정상이라고 확인했습니다. 개인 Spotify 토큰과 현재 재생 정보는 사이트 서버에 저장하거나 다른 방문자와 공유하지 않습니다.
+기존 운영 기록에 따르면 사이트는 사용자 선택에 따라 비공개로 유지되었고 래빗에서도 소유자 ChatGPT 로그인이 필요했습니다. 현재 공유 설정은 배포 관리 화면에서 별도로 확인해야 합니다. 사용자는 r6에서 Spotify 연결·재실행 로그인 유지·가사 휠 탐색·현재 줄 따라가기·하단 버튼 표시가 정상이라고 확인했습니다. 개인 Spotify 토큰과 현재 재생 정보는 사이트 서버에 저장하거나 다른 방문자와 공유하지 않습니다.
+
+## 다른 사용자도 사용할 수 있나요?
+
+**코드는 다른 사용자의 Spotify 계정을 지원하지만, GitHub에 소스가 공개되어 있다는 것만으로 기존 앱 주소를 누구나 사용할 수 있는 것은 아닙니다.** 사이트 접근 권한과 Spotify 앱 사용 권한을 각각 충족해야 합니다.
+
+| 사용 방식 | 필요한 조건 |
+| --- | --- |
+| 기존 사이트 + 기본 Client ID | 사이트에 접근할 수 있어야 하며, Spotify 앱 소유자가 해당 사용자를 허용 목록에 등록해야 합니다. |
+| 기존 사이트 + 본인 Client ID | 사이트 접근 권한은 여전히 필요합니다. 본인 Spotify 앱에 기존 사이트 주소를 Redirect URI로 등록하고 설정에서 Client ID를 변경합니다. |
+| 본인 사이트 + 본인 Client ID | 저장소를 복제해 HTTPS 서버에 배포하고, 본인 Spotify 앱에 새 주소를 Redirect URI로 등록합니다. rabbit Creation의 URL도 새 주소로 지정합니다. |
+
+### 소수 사용자에게 공유
+
+1. 기존 기록상 배포 사이트는 비공개입니다. 먼저 다른 사용자가 접근할 수 있도록 사이트 공유 권한을 설정하거나 별도 배포 주소를 준비합니다. 현재 배포 관리 화면의 공개 여부는 이 README 업데이트 과정에서 확인하지 않았습니다.
+2. [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)에서 앱 → **Settings → Users Management → Add new user**를 열어 사용자의 이름과 Spotify 계정 이메일을 추가합니다.
+3. 사용자는 자신의 Spotify 계정으로 로그인하고, 같은 계정의 휴대폰·PC·스피커에서 먼저 곡을 재생합니다. 재생 제어 API에는 해당 사용자의 Spotify Premium이 필요합니다.
+4. 각 사용자는 자신의 기기와 브라우저 프로필을 사용합니다. 로그인 토큰은 기기에 저장되므로 같은 기기·프로필을 다른 사람이 사용할 때는 먼저 ‘이 기기 연결 해제’를 누릅니다. 계정 비밀번호나 토큰을 공유할 필요는 없습니다.
+
+2026-10-14 확인한 [Spotify 공식 개발자 모드 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)에 따르면 앱 소유자는 Premium이어야 하며, 개발자 모드 앱은 허용 목록에 등록된 **최대 5명의 인증 사용자**가 사용할 수 있습니다. 허용 목록에 없는 계정은 로그인에 성공하더라도 API 호출이 **403**으로 거부될 수 있습니다. 현재 기본 Client ID의 실제 모드·허용 목록·남은 자리는 소스에서 확인할 수 없으므로 앱 소유자가 Dashboard에서 확인해야 합니다.
+
+불특정 다수에게 기본 Client ID 하나로 제공하려면 Spotify의 **Extended quota mode** 승인이 필요합니다. 공식 안내상 신규 신청은 개인이 아닌 조직을 대상으로 하며, 등록 사업체·출시 서비스·최소 월간 활성 사용자 25만 명 등의 요건이 있습니다. 사이트를 공개하는 것만으로 Spotify 사용자 제한이 해제되지는 않습니다. 정책은 변경될 수 있으므로 공유 전에 공식 문서를 다시 확인합니다.
+
+### 직접 배포
+
+```powershell
+git clone https://github.com/plutoparty1/Rabbit_R1.git
+cd Rabbit_R1/r1-spotify
+node scripts/build.mjs
+```
+
+빌드 결과인 `dist/server/index.js`를 진입점으로 하고 `bugs.mjs`·`assets.mjs`를 함께 Cloudflare Worker 등 호환 런타임에 배포합니다. 저장소에는 계정별 배포 설정이나 자동 배포 명령이 포함되어 있지 않아 호스팅 설정은 별도로 준비해야 합니다. `dist`만 정적 호스팅하면 벅스 조회용 `/api/lyrics/bugs` 서버가 제공되지 않습니다.
+
+배포 후 Spotify 앱의 Redirect URI를 새 HTTPS 주소와 정확히 맞추고, 연결 설정에서 본인 Client ID를 입력합니다. [Creation 설치 정보](docs/install-creation.json)의 `url`도 새 주소로 변경합니다. [기존 설치 QR](docs/install-qr.png)은 기존 배포 주소용이므로 자체 배포에는 그대로 사용하지 않습니다. 주소가 바뀌면 저장소 출처도 바뀌므로 Spotify에 다시 로그인해야 합니다.
+
+다른 사용자 계정과 실제 rabbit 기기로 이 전체 공유 절차를 시험한 것은 아닙니다. 코드의 계정별 로그인 구조와 공식 정책을 확인한 안내이며, 배포 후 접근·로그인·재생 제어를 각 사용자 기기에서 확인해야 합니다.
 
 ## 저장과 연결
 
@@ -70,7 +105,7 @@ node --check dist/spotify.mjs
 - 화면 높이를 최소 282px로 강제하지 않고 실제 표시 영역에 맞추며 재생 버튼 아래에는 24px 여백을 확보합니다.
 - 휠은 window/document의 rabbit 이벤트, 표준 wheel, 위아래 방향키 입력을 받습니다. 가사 이동은 구형 WebView에서도 지원되는 scrollTop을 사용합니다. 시간 정보가 없는 가사는 체크박스를 해제·비활성화합니다.
 - 안드로이드 휴대폰 재생만으로 원격 음량 제어 가능 여부를 단정하지 않습니다. Spotify의 실제 supports_volume·volume_percent·is_restricted 응답을 기준으로 제어하며, 미지원 휴대폰에서는 휴대폰에서 음량을 조절하도록 안내합니다.
-- 설정의 ‘기기 확인’에서 재생 기기·음량 지원 여부, 휠 입력 횟수, 표시 영역, 로그인 저장 확인 결과를 볼 수 있습니다. 버전은 20261008-r7이며 변경된 자원 주소에 버전값을 넣어 이전 CSS/JavaScript 재사용을 줄입니다.
+- 설정의 ‘기기 확인’에서 재생 기기·음량 지원 여부, 휠 입력 횟수, 표시 영역, 로그인 저장 확인 결과를 볼 수 있습니다. 현재 저장소의 화면 표시 버전은 20261008-r13이며 변경된 자원 주소에 버전값을 넣어 이전 CSS/JavaScript 재사용을 줄입니다. 배포 사이트가 같은 버전인지는 별도로 확인해야 합니다.
 - 사용자 실기 보고는 모의 시험과 구분합니다. r6의 네 가지 개선은 사용자 확인을 받았으며, r7의 탭 안내 기능은 실기 재확인이 필요합니다.
 
 ## 참고
