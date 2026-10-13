@@ -1,0 +1,15 @@
+{
+  "checkedAt": "2026-10-07T06:31:29.259501+00:00",
+  "threadId": "01a114ef-1110-78b3-b814-0f5a98771528",
+  "turnId": "01a1150f-07dc-7992-b026-7ac4a433bb52",
+  "endpoint": "ws://127.0.0.1:4500",
+  "twoRpcClientsMatched": true,
+  "items": [
+    {
+      "itemId": "msg_00464e1d95e28b9b016ac5e736390c819195279038a63cdcbc",
+      "text": "검증 숫자: 594"
+    }
+  ],
+  "pcTuiOutputCaptured": false,
+  "originalThreadVerified": false
+}

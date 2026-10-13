@@ -1,0 +1,17 @@
+{
+  "browserUi": "PASS",
+  "realDevice": "NOT_TESTED",
+  "realKoreanSpeech": "NOT_TESTED",
+  "voiceAndMicrophone": "SIMULATED",
+  "transport": "REAL_LOCAL_HTTP_WS",
+  "sameServerSameThreadProven": false,
+  "results": {
+    "speechStarts": 3,
+    "speechStops": 2,
+    "speechAborts": 1,
+    "stoppedTracks": 2,
+    "counts": "SDK 시작/종료/클릭 4/2/1 · 브라우저 1/1/0",
+    "horizontalOverflow": false
+  },
+  "errors": []
+}

@@ -1,0 +1,13 @@
+{
+  "sessionId": "47f742f1771b416e858842328fe7d4f9",
+  "active": false,
+  "phase": "stopped",
+  "url": "https://directory-promptly-pennsylvania-handhelds.trycloudflare.com",
+  "startedAt": "2026-10-07T06:25:56.105213+00:00",
+  "expiresAt": "2026-10-07T07:25:56.105213+00:00",
+  "stoppedAt": "2026-10-07T07:25:56.492661+00:00",
+  "error": null,
+  "sameServerSameThreadProven": false,
+  "commandDeliveryEnabled": false,
+  "realR1Test": "not_verified"
+}

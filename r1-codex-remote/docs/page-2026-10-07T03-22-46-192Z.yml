@@ -1,0 +1,12 @@
+- main [ref=f6e2]:
+  - region "Codex 사용 한도" [ref=f6e3]:
+    - generic [ref=f6e4]:
+      - strong [ref=f6e5]: Codex 잔여 한도
+      - generic [ref=f6e6]: 연결 대기
+    - paragraph [ref=f6e8]: PC 연결 후 확인합니다.
+    - generic [ref=f6e9]:
+      - strong [ref=f6e10]: 세션 상태
+      - paragraph [ref=f6e11]: 실시간 세션 연결이 필요합니다.
+    - generic [ref=f6e12]:
+      - generic [ref=f6e13]: 갱신 정보 없음
+      - button "연결·시험" [ref=f6e14] [cursor=pointer]

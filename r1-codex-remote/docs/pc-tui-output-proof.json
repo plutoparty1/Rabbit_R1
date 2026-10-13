@@ -1,0 +1,11 @@
+{
+  "scope": "dedicated_test_thread",
+  "threadId": "01a114ef-1110-78b3-b814-0f5a98771528",
+  "turnId": "01a114fb-01ad-7772-a15b-e51df04e7b05",
+  "itemId": "msg_00464e1d95e28b9b016ac5e21386388191a04600de51965387",
+  "pcTuiOutputCaptured": true,
+  "observedAssistantText": "검증 숫자: 383",
+  "twoRpcClientsMatched": true,
+  "originalThreadVerified": false,
+  "evidence": "전용 원격 TUI의 실제 PTY 출력과 동일 턴의 두 RPC 수신 결과 비교"
+}

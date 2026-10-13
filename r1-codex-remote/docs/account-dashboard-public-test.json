@@ -1,0 +1,28 @@
+{
+  "result": "PASS",
+  "realAccountQuota": {
+    "status": "ready",
+    "windows": [
+      {
+        "id": "primary",
+        "remainingPercent": 63,
+        "windowDurationMins": 10080,
+        "resetsAt": 1791601842
+      }
+    ],
+    "checkedAt": "2026-10-07T03:22:42.565159+00:00",
+    "source": "account/rateLimits/read",
+    "sourceScope": "account_only",
+    "sameServerSameThreadProven": false,
+    "modelTurnsStarted": 0
+  },
+  "layout": {
+    "homeBottom": 274,
+    "height": 282,
+    "horizontalOverflow": false,
+    "cardOverflow": false,
+    "unknown": "확인 불가"
+  },
+  "realR1Test": "NOT_TESTED",
+  "sessionsVerified": false
+}

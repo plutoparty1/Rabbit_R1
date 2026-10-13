@@ -1,0 +1,18 @@
+{
+  "checkedAt": "2026-10-07T05:56:37.004738+00:00",
+  "result": "PASS",
+  "endpoint": "ws://127.0.0.1:4500",
+  "scope": "dedicated_test_thread",
+  "threadId": "01a114ef-1110-78b3-b814-0f5a98771528",
+  "turnId": "01a114ef-4c01-7e61-8561-a6067d8aeed1",
+  "matchedAgentItems": [
+    {
+      "itemId": "msg_055efa1a9abcac28016ac5df1251e087d0a9105ff56d82e30d",
+      "text": "실시간 연결 시험 완료"
+    }
+  ],
+  "twoRpcClientsMatched": true,
+  "pcTuiVerified": false,
+  "originalThreadVerified": false,
+  "modelTurnsStarted": 2
+}

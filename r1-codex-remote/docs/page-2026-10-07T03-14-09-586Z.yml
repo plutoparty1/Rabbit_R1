@@ -1,0 +1,16 @@
+- main [ref=f5e2]:
+  - region "Codex 사용 한도" [ref=f5e3]:
+    - generic [ref=f5e4]:
+      - strong [ref=f5e5]: Codex 잔여 한도
+      - generic [ref=f5e6]: PC 연결
+    - generic [ref=f5e8]:
+      - generic [ref=f5e9]: 7일 한도
+      - status [ref=f5e10]: 63%
+      - generic [ref=f5e11]: 초기화 10. 10. 12:10
+      - meter "7일 한도 잔여 비율" [ref=f5e12]
+    - generic [ref=f5e13]:
+      - strong [ref=f5e14]: 세션 상태
+      - paragraph [ref=f5e15]: 실시간 세션 연결이 필요합니다.
+    - generic [ref=f5e16]:
+      - generic [ref=f5e17]: 갱신 12:13
+      - button "연결·시험" [ref=f5e18] [cursor=pointer]

@@ -1,0 +1,31 @@
+- main [ref=e2]:
+  - generic [ref=e3]:
+    - strong [ref=e4]: R1 연결 진단
+    - generic [ref=e5]: 브라우저 · 실기 미검증
+  - paragraph [ref=e6]: Codex 실시간 연결 미증명명령 전송이 차단되어 있습니다.
+  - generic [ref=e7]:
+    - generic [ref=e8]: PC 연결 코드
+    - generic [ref=e9]:
+      - textbox "PC 연결 코드" [ref=e10]
+      - button "연결" [ref=e11] [cursor=pointer]
+  - status [ref=e12]: 브리지 연결이 필요합니다.
+  - generic [ref=e13]: 입력 시험 방식
+  - combobox "입력 시험 방식" [ref=e14]:
+    - option "한국어 Web Speech (지원 확인)" [selected]
+    - option "마이크 녹음만 확인"
+  - group [ref=e15]:
+    - generic "시험 설정" [ref=e16]
+    - option "브라우저" [selected]
+    - option "r1 실기 · 결과 미확인"
+  - 'button "브라우저 시험: 누르고 말해 주세요." [ref=e17] [cursor=pointer]'
+  - status [ref=e18]: 음성 입력 대기 중입니다.
+  - status "최종 인식 문장" [ref=e19]: 최종 인식 문장이 여기에 표시됩니다.
+  - generic [ref=e20]:
+    - button "통신 시험" [ref=e21] [cursor=pointer]
+    - button "취소" [ref=e22] [cursor=pointer]
+  - paragraph
+  - list "진단 이벤트 기록"
+  - generic [ref=e23]:
+    - button "결과 저장" [ref=e24] [cursor=pointer]
+    - button "연결 해제" [ref=e25] [cursor=pointer]
+  - paragraph [ref=e26]: 내장 STT 호출법은 공개 SDK에서 확인되지 않았습니다. 녹음·문장을 PC에 저장하거나 Codex에 전송하지 않습니다.

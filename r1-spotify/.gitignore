@@ -1,0 +1,6 @@
+.project_tmp/
+.sites-runtime/
+node_modules/
+.env
+*.log
+dist/server/

@@ -1,0 +1,22 @@
+{
+  "checkedAt": "2026-10-07T06:33:07Z",
+  "scope": "dedicated_test_thread_public_pc_browser",
+  "threadId": "01a114ef-1110-78b3-b814-0f5a98771528",
+  "turnId": "01a1150f-07dc-7992-b026-7ac4a433bb52",
+  "itemId": "msg_00464e1d95e28b9b016ac5e736390c819195279038a63cdcbc",
+  "text": "검증 숫자: 594",
+  "twoRpcClientsMatched": true,
+  "productionBridgeReceivedLiveEvent": true,
+  "publicBrowserWssRendered": true,
+  "pcTuiReceiptForThisTurn": "not_captured",
+  "originalThreadVerified": false,
+  "commandDeliveryEnabled": false,
+  "realR1Test": "NOT_TESTED",
+  "browserUiMockChecks": {
+    "wheelList": "PASS_AFTER_RED",
+    "responseUpdateWithUnchangedQuota": "PASS",
+    "plainTextBody": "PASS",
+    "horizontalOverflow": false,
+    "javascriptErrors": 0
+  }
+}

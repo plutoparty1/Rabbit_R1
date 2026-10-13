@@ -1,0 +1,16 @@
+// 기존 정적 화면을 서버에 포함하여 별도 라이브러리나 파일 저장소 없이 동일한 주소로 제공합니다.
+import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
+
+const root = new URL('../', import.meta.url);
+const types = { 'index.html': 'text/html', 'style.css': 'text/css', 'app.mjs': 'text/javascript', 'core.mjs': 'text/javascript', 'spotify.mjs': 'text/javascript' };
+const assets = {};
+for (const [filename, type] of Object.entries(types)) {
+  assets['/' + filename] = { type: type + '; charset=utf-8', body: await readFile(new URL('dist/' + filename, root), 'utf8') };
+}
+const output = new URL('dist/server/', root);
+await mkdir(output, { recursive: true });
+await copyFile(new URL('server/worker.mjs', root), new URL('index.js', output));
+await copyFile(new URL('server/bugs.mjs', root), new URL('bugs.mjs', output));
+// 이 출력은 배포용 생성 파일이며 임시파일 정리 대상이 아닙니다.
+await writeFile(new URL('assets.mjs', output), '// 기존 화면을 원문 그대로 포함한 배포 자료입니다.\nexport default ' + JSON.stringify(assets) + ';\n', 'utf8');
+console.log('벅스 조회를 포함한 배포 파일이 준비되었습니다.');

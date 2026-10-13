@@ -1,0 +1,11 @@
+﻿{
+    "checkedAt":  "2026-10-07T06:42:56.0071619Z",
+    "note":  "초기 진단 이후 설정 파일의 변경이 감지되었습니다. 이 프로젝트에서는 해당 파일을 쓰지 않았으며 원인을 단정하거나 되돌리지 않았습니다.",
+    "configEditedByThisProject":  false,
+    "configLastWriteAt":  "2026-10-07T15:10:33.2536383+09:00",
+    "configurationRestored":  false,
+    "authMatchesInitial":  true,
+    "originalProcessStillRunning":  true,
+    "configMatchesInitial":  false,
+    "latestConfiguredModel":  "gpt-6-astra"
+}

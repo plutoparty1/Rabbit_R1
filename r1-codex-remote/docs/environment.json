@@ -1,0 +1,204 @@
+{
+  "checkedAt": "2026-10-07T01:34:37.589008+00:00",
+  "binary": "C:\\Users\\정산-PC\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+  "codexHome": "C:\\Users\\정산-PC\\.codex",
+  "cwd": "C:\\Users\\정산-PC\\jjs1124",
+  "currentThreadId": "01a113d7-a337-75b1-871f-d4db4a3c36b7",
+  "version": {
+    "exitCode": 0,
+    "output": "codex-cli 0.160.1"
+  },
+  "login": {
+    "exitCode": 0,
+    "output": "Logged in using ChatGPT"
+  },
+  "daemonVersion": {
+    "exitCode": 1,
+    "output": "Error: failed to connect to C:\\Users\\정산-PC\\.codex\\app-server-control\\app-server-control.sock\n\nCaused by:\n    네트워크를 사용할 수 없기 때문에 소켓 작업을 진행할 수 없습니다. (os error 10050)"
+  },
+  "sameServerSameThreadProven": false,
+  "commandDeliveryEnabled": false,
+  "fingerprintsBefore": {
+    "config.toml": "afc0da4d421fcf80dd350a2ca95592f75db38e0e781c3306481d51ad7a1dc0fe",
+    "auth.json": "99b581789e0f6f3a2f62585ae9e34fb20d343e22c86070bc0ad1e60ae35852fd"
+  },
+  "processes": {
+    "pid": 37572,
+    "parentPid": 25512,
+    "binary": "C:\\Users\\정산-PC\\AppData\\Local\\Programs\\OpenAI\\Codex\\bin\\codex.exe",
+    "noDaemon": true,
+    "appServer": false,
+    "remote": false,
+    "listener": ""
+  },
+  "schemaGenerationExitCode": 0,
+  "schemas": {
+    "InitializeParams": {
+      "sha256": "b55124e7c0f36a1789396daa5578217a92be67f053903696236686e59f6f212e",
+      "required": [
+        "clientInfo"
+      ],
+      "properties": [
+        "capabilities",
+        "clientInfo"
+      ]
+    },
+    "InitializeResponse": {
+      "sha256": "62ad689c2cb6379913c1d72749cfd8de5089d35760214123518eb92eef11acc9",
+      "required": [
+        "codexHome",
+        "platformFamily",
+        "platformOs",
+        "userAgent"
+      ],
+      "properties": [
+        "codexHome",
+        "platformFamily",
+        "platformOs",
+        "userAgent"
+      ]
+    },
+    "GetAccountRateLimitsResponse": {
+      "sha256": "cb9655e68130116f634ed9353e45b336492e6069a6628f424d1cd52e54eda0e0",
+      "required": [
+        "rateLimits"
+      ],
+      "properties": [
+        "accountId",
+        "ordinaryUsageAllowed",
+        "rateLimitResetCredits",
+        "rateLimitUpsell",
+        "rateLimits",
+        "rateLimitsByLimitId"
+      ]
+    },
+    "GetAccountTokenUsageResponse": {
+      "sha256": "a58e58c852c888e5de925d99a66688d55ebb2fff038e795aadf04f8a8426dff8",
+      "required": [
+        "summary"
+      ],
+      "properties": [
+        "dailyUsageBuckets",
+        "summary",
+        "threadUsage"
+      ]
+    },
+    "ThreadLoadedListParams": {
+      "sha256": "42c2d124ab2b2998d84f0126daae2d32b0bf9c5a7ea7266e3a0814e5e37cf00d",
+      "required": [],
+      "properties": [
+        "cursor",
+        "limit"
+      ]
+    },
+    "ThreadLoadedListResponse": {
+      "sha256": "1ea02c4710083e552b2a3a89b931b9049d5bf05b7db46278b8352cf9fd80cd52",
+      "required": [
+        "data"
+      ],
+      "properties": [
+        "data",
+        "nextCursor"
+      ]
+    },
+    "ThreadReadParams": {
+      "sha256": "dfe040c6ac71d30795b8be3f3ff232e66f362a37f883b491e5d1ea367f470db4",
+      "required": [
+        "threadId"
+      ],
+      "properties": [
+        "includeTurns",
+        "threadId"
+      ]
+    },
+    "ThreadTokenUsageUpdatedNotification": {
+      "sha256": "aba4f6c7e4a19b2b842c08ee793b57000c07dafd57b922ad0d8e7c76609108c2",
+      "required": [
+        "threadId",
+        "tokenUsage",
+        "turnId"
+      ],
+      "properties": [
+        "threadId",
+        "tokenUsage",
+        "turnId"
+      ]
+    },
+    "TurnStartParams": {
+      "sha256": "07771223642e1b61bd9aac0069fc0f98143a1c047724ca02c7ceb13653442738",
+      "required": [
+        "input",
+        "threadId"
+      ],
+      "properties": [
+        "additionalContext",
+        "approvalPolicy",
+        "approvalsReviewer",
+        "clientUserMessageId",
+        "collaborationMode",
+        "cwd",
+        "cyberAccessProgram",
+        "disabledPluginIds",
+        "effort",
+        "environments",
+        "input",
+        "model",
+        "multiAgentMode",
+        "outputSchema",
+        "permissions",
+        "personality",
+        "responsesapiClientMetadata",
+        "runtimeWorkspaceRoots",
+        "sandboxPolicy",
+        "serviceTier",
+        "serviceTierForTurn",
+        "summary",
+        "threadId",
+        "toolOutput",
+        "turnTrigger"
+      ]
+    },
+    "TurnSteerParams": {
+      "sha256": "99f7fdff8b090065b68f36420b70870b5eafed048c024b308230aaa02f15d891",
+      "required": [
+        "expectedTurnId",
+        "input",
+        "threadId"
+      ],
+      "properties": [
+        "additionalContext",
+        "clientUserMessageId",
+        "expectedTurnId",
+        "input",
+        "responsesapiClientMetadata",
+        "threadId"
+      ]
+    }
+  },
+  "selectedMethods": [
+    "account/bedrock/discover",
+    "account/bedrock/setup",
+    "account/gatewayOAuth/cancel",
+    "account/gatewayOAuth/login",
+    "account/gatewayOAuth/read",
+    "account/login/cancel",
+    "account/login/start",
+    "account/logout",
+    "account/rateLimitResetCredit/consume",
+    "account/rateLimits/read",
+    "account/read",
+    "account/sendAddCreditsNudgeEmail",
+    "account/usage/read",
+    "account/workspaceMessages/read",
+    "thread/loaded/list",
+    "turn/interrupt",
+    "turn/settings/update",
+    "turn/start",
+    "turn/steer"
+  ],
+  "fingerprintsAfter": {
+    "config.toml": "afc0da4d421fcf80dd350a2ca95592f75db38e0e781c3306481d51ad7a1dc0fe",
+    "auth.json": "99b581789e0f6f3a2f62585ae9e34fb20d343e22c86070bc0ad1e60ae35852fd"
+  },
+  "settingsUnchanged": true
+}

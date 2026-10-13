@@ -1,0 +1,7 @@
+﻿{
+    "result":  "PASS",
+    "url":  "https://familiar-charts-lucas-josh.trycloudflare.com",
+    "wrongOriginHttpStatus":  403,
+    "certificateVerification":  "Windows 기본 검증",
+    "checkedAt":  "2026-10-07T01:56:37.7740402Z"
+}

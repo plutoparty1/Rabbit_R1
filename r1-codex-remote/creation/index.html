@@ -1,0 +1,28 @@
+<!doctype html>
+<!-- 계정 한도와 수신한 공개 이벤트를 표시하며 미검증 음성 명령은 전송하지 않습니다. -->
+<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>R1 Codex 연결 진단</title><link rel="stylesheet" href="/creation/style.css"></head>
+<body><main>
+<section id="home" class="home" aria-label="Codex 사용 한도">
+<div class="home-title"><strong>Codex 잔여 한도</strong><span id="home-connection">연결 대기</span></div>
+<div id="quota-windows" class="quota-windows" aria-live="polite"><p>PC 연결 후 확인합니다.</p></div>
+<section class="session-overview"><strong>연결된 세션</strong><p id="session-summary">실시간 세션 연결이 필요합니다.</p><div id="session-list"></div></section>
+<div class="home-bottom"><span id="quota-updated">갱신 정보 없음</span><button id="show-diagnostic" type="button">연결·시험</button></div>
+</section>
+<section id="response" hidden><button id="response-back" type="button">잔여 한도로 돌아가기</button><h2 id="response-name"></h2><p id="response-status"></p><pre id="response-text">아직 실시간 응답이 없습니다.</pre></section>
+<section id="diagnostic" hidden>
+<button id="show-home" type="button">잔여 한도로 돌아가기</button>
+<header><strong>R1 연결 진단</strong><span id="environment">브라우저 · 실기 미검증</span></header>
+<p class="warning">Codex 실시간 연결 미증명<br>명령 전송이 차단되어 있습니다.</p>
+<form id="pair-form"><label for="pair-code">PC 연결 코드</label><div class="row"><input id="pair-code" inputmode="numeric" maxlength="8" autocomplete="off" required><button>연결</button></div></form>
+<p id="network" role="status">브리지 연결이 필요합니다.</p>
+<label for="mode">입력 시험 방식</label><select id="mode"><option value="speech">한국어 Web Speech (지원 확인)</option><option value="microphone">마이크 녹음만 확인</option></select>
+<details><summary>시험 설정</summary><label for="test-environment">시험 환경 (직접 선택)</label><select id="test-environment"><option value="browser">브라우저</option><option value="r1">r1 실기 · 결과 미확인</option></select><label for="max-seconds">최대 녹음 초 (5~60)</label><input id="max-seconds" type="number" min="5" max="60" value="30"><p id="capabilities"></p></details>
+<button id="ptt" type="button">브라우저 시험: 누르고 말해 주세요.</button>
+<p id="microphone" role="status">음성 입력 대기 중입니다.</p>
+<output id="transcript" aria-label="최종 인식 문장">최종 인식 문장이 여기에 표시됩니다.</output>
+<div class="row"><button id="ping" type="button">통신 시험</button><button id="cancel" type="button">취소</button></div>
+<p id="counts"></p><ol id="events" aria-label="진단 이벤트 기록"></ol>
+<div class="row"><button id="export" type="button">결과 저장</button><button id="unpair" type="button">연결 해제</button></div>
+<p class="note">내장 STT 호출법은 공개 SDK에서 확인되지 않았습니다. 녹음·문장을 PC에 저장하거나 Codex에 전송하지 않습니다.</p>
+</section></main><script type="module" src="/creation/app.mjs"></script></body></html>

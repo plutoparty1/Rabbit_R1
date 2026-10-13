@@ -1,0 +1,27 @@
+{
+  "checkedAt": "2026-10-07T02:20:51.680Z",
+  "url": "https://familiar-charts-lucas-josh.trycloudflare.com",
+  "result": "PASS",
+  "testEnvironment": "PC_BROWSER_PUBLIC_NETWORK",
+  "realR1Test": "NOT_TESTED",
+  "realKoreanStt": "NOT_TESTED",
+  "missingBrowserApis": [
+    "AbortSignal.timeout"
+  ],
+  "timeoutCancelled": true,
+  "timeoutMs": 8014,
+  "certificateVerification": "BROWSER_DEFAULT",
+  "ignoreHTTPSErrors": false,
+  "httpsPage": 200,
+  "wssReceived": true,
+  "hostId": "1c3b769986f03571",
+  "diagnosticRoundTripMs": 92,
+  "unpairedHttp": 401,
+  "commandsBlocked": 409,
+  "wrongOriginTest": "separate-native-HTTPS-check",
+  "revokedHttp": 401,
+  "revokedWssCloseCode": 1008,
+  "sameServerSameThreadProven": false,
+  "commandDeliveryEnabled": false,
+  "errors": []
+}

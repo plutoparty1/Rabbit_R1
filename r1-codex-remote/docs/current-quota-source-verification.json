@@ -1,0 +1,65 @@
+{
+  "checkedAt": "2026-10-07T04:45:20.932869+00:00",
+  "accountType": "chatgpt",
+  "planType": "prolite",
+  "rateLimits": {
+    "limitId": "codex",
+    "limitName": null,
+    "normalModelSlug": null,
+    "primary": {
+      "usedPercent": 0,
+      "windowDurationMins": 10080,
+      "resetsAt": 1791950350
+    },
+    "secondary": null,
+    "credits": {
+      "hasCredits": false,
+      "unlimited": false,
+      "balance": "0"
+    },
+    "individualLimit": null,
+    "spendControlReached": false,
+    "planType": "prolite",
+    "rateLimitReachedType": null
+  },
+  "rateLimitsByLimitId": {
+    "base_model_inference": {
+      "limitId": "base_model_inference",
+      "limitName": "gpt-reserve",
+      "normalModelSlug": "gpt-5.6-luna",
+      "primary": {
+        "usedPercent": 0,
+        "windowDurationMins": 10080,
+        "resetsAt": 1791953121
+      },
+      "secondary": null,
+      "credits": null,
+      "individualLimit": null,
+      "spendControlReached": null,
+      "planType": "prolite",
+      "rateLimitReachedType": null
+    },
+    "codex": {
+      "limitId": "codex",
+      "limitName": null,
+      "normalModelSlug": null,
+      "primary": {
+        "usedPercent": 0,
+        "windowDurationMins": 10080,
+        "resetsAt": 1791950350
+      },
+      "secondary": null,
+      "credits": {
+        "hasCredits": false,
+        "unlimited": false,
+        "balance": "0"
+      },
+      "individualLimit": null,
+      "spendControlReached": false,
+      "planType": "prolite",
+      "rateLimitReachedType": null
+    }
+  },
+  "sameServerSameThreadProven": false,
+  "modelTurnsStarted": 0
+}

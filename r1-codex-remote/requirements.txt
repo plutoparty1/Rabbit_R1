@@ -1,0 +1,7 @@
+# 진단 브리지와 통합 테스트에 필요한 패키지만 사용합니다.
+fastapi
+uvicorn
+websockets
+httpx
+# 설치용 QR 이미지 생성에만 사용합니다.
+qrcode[pil]

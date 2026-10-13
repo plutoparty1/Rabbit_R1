@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta name="description" content="래빗에서 Spotify 현재 곡을 확인하고 재생을 제어하는 개인용 리모컨입니다.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://i.scdn.co; connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://lrclib.net https://api.lyrics.ovh; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>R1 Spotify</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101211'/%3E%3Cpath d='M12 7v18M20 7v18' stroke='%231ed760' stroke-width='5'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="./style.css?v=20261008-r7">
+</head>
+<body>
+  <!-- 작은 화면에서도 아트와 곡 정보를 함께 확인할 수 있도록 구성합니다. -->
+  <main id="app">
+    <section id="player-view" class="view player">
+      <header><a id="spotify-link" href="https://open.spotify.com" target="_blank" rel="noopener noreferrer">Spotify</a><button id="settings-button" class="icon" aria-label="연결 설정">···</button></header>
+      <button id="art-button" aria-label="현재 곡 가사 보기" disabled>
+        <img id="cover" alt="" hidden>
+        <span id="empty-art"><span class="empty-symbol" aria-hidden="true">♫</span><span id="empty-message">Spotify를 연결해 주세요.</span><span class="empty-action">연결 설정</span></span>
+      </button>
+      <div class="metadata"><p id="artist">아티스트</p><h1 id="title">재생 중인 음악</h1><p id="album">앨범</p></div>
+      <div class="timeline"><progress id="progress" max="1" value="0" aria-label="곡 재생 진행"></progress><div><span id="elapsed">0:00</span><p id="status" role="status">연결이 필요합니다.</p><span id="duration">0:00</span></div></div>
+      <nav class="controls" aria-label="재생 제어"><button id="previous" aria-label="이전 곡" disabled>Ⅰ◀</button><button id="toggle" aria-label="재생" disabled>▶</button><button id="next" aria-label="다음 곡" disabled>▶Ⅰ</button></nav>
+    </section>
+    <section id="lyrics-view" class="view lyrics" hidden>
+      <!-- 정보와 설정은 탭할 때만 잠시 표시하고 평소에는 가사 영역을 확장합니다. -->
+      <div id="lyrics-controls" role="group" aria-label="가사 정보와 따라가기 설정" hidden>
+        <header><span id="lyrics-source">가사</span><span>좌우로 밀어 주세요.</span></header>
+        <h2 id="lyrics-title">가사</h2><p id="lyrics-status"></p>
+        <label class="follow-control"><input id="follow" type="checkbox" checked disabled>현재 가사 따라가기</label>
+      </div>
+      <div id="lyrics-lines" tabindex="0" aria-label="가사. 탭하거나 Enter 키로 따라가기 설정을 표시합니다."></div>
+      <p id="lyrics-empty" role="status">가사를 불러오고 있습니다.</p>
+    </section>
+    <section id="settings-view" class="view settings" hidden>
+      <header><h2>Spotify 연결</h2><button id="settings-back" class="icon" aria-label="설정 닫기">닫기</button></header>
+      <p>Spotify에서 곡을 재생한 뒤 연결해 주세요. 음악은 현재 기기에서 재생됩니다.</p>
+      <form id="connect-form"><label for="client-id">Client ID</label><input id="client-id" autocomplete="off" autocapitalize="off" spellcheck="false" pattern="[a-fA-F0-9]{32}" required placeholder="앱 등록 후 한 번 입력해 주세요."><button id="connect" type="submit" class="primary">Spotify 로그인</button></form>
+      <p id="auth-message" role="status"></p><button id="disconnect" hidden>이 기기 연결 해제</button>
+      <details><summary>처음 연결하는 방법</summary><ol><li><a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">Spotify 개발자 페이지</a>에서 Web API 앱을 등록해 주세요.</li><li>Redirect URI에 아래 주소를 그대로 등록해 주세요.<code id="redirect-uri"></code></li><li>Client ID를 입력하고 로그인해 주세요. Client Secret은 필요하지 않습니다.</li></ol><p>개발자 앱 소유 계정에 Premium이 필요합니다.</p></details>
+      <details><summary>조작 안내</summary><p>앨범아트 왼쪽으로 밀기: 다음 곡<br>앨범아트 오른쪽으로 밀기: 이전 곡<br>래빗 버튼 한 번: 재생·일시정지<br>앨범아트 누르기: 가사<br>재생 화면 휠 위/아래: 볼륨 +5%/-5%<br>가사·설정 화면 휠: 탐색<br>가사 화면 좌우로 밀기: 재생 화면</p><p>‘현재 가사 따라가기’를 체크하면 재생 위치로 이동하고, 해제하면 자유롭게 탐색할 수 있습니다. 휠·터치 탐색 시 체크가 해제됩니다. 벅스에서 일반 가사를 먼저 찾고, 없으면 LRCLIB·lyrics.ovh를 조회합니다. 시간 정보가 있는 곡만 따라갑니다.</p></details>
+      <details><summary>기기 확인</summary><p id="volume-support">재생 기기 정보를 기다리고 있습니다.</p><p id="input-status">휠 입력을 기다리고 있습니다.</p><p id="viewport-status"></p><p id="storage-status">로그인 유지 상태를 확인하고 있습니다.</p></details>
+      <p class="fine">버전 20261008-r13 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.</p>
+    </section>
+  </main>
+  <script type="module" src="./app.mjs?v=20261008-r13"></script>
+</body>
+</html>
