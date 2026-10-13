@@ -117,4 +117,3 @@ node --check dist/spotify.mjs
 - [rabbit 하드웨어 이벤트와 보안 저장소](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md)
 - [LRCLIB API](https://lrclib.net/docs)
 - [lyrics.ovh API](https://github.com/NTag/lyrics.ovh#api)
-- [벅스 시올 살얼음 곡 정보](https://music.bugs.co.kr/track/32794634)
