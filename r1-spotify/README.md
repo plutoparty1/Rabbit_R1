@@ -98,7 +98,7 @@ node --check dist/spotify.mjs
 
 `tests/lyrics-controls-check.js`는 기본 가사 전용 화면·탭 표시/숨김·3초 자동 숨김·체크박스 조작 시 시간 연장·따라가기 유지·자유 탐색 위치 보존·세로 탐색 구분·키보드 접근·가사 없는 상태 표시를 검증합니다. `docs/lyrics-only-240x282.png`와 `docs/lyrics-controls-240x282.png`는 모의 응답으로 만든 영구 검증 이미지입니다.
 
-`tests/lyrics.test.mjs`는 벅스 우선 조회·LRCLIB 재검색·동일 곡 판별·lyrics.ovh 대체 조회·연주곡·장애와 가사 없음 구분·인증 정보 미전송·보안 정책을 모의 시험합니다. `tests/bugs.test.mjs`와 `tests/worker.test.mjs`는 벅스 검색 구조·가수 별칭·곡 길이·요청 제한·응답 검사·기존 화면 제공을 검증합니다. `tests/resume-check.js`는 일시적인 0 높이·복귀 신호·늦은 화면 크기 복원·중복 조회 억제·백그라운드 조회 중단·대체 가사의 안전한 표시·탐색 위치 유지·복귀 후 가사 재시도를 같은 Playwright 방식으로 검증합니다. `tests/bugs-browser-check.js`는 Spotify 재생을 모의 처리하고 시올의 ‘살얼음’을 실제 벅스 공개 조회로 받아 앱의 출처·일반 가사 표시를 확인합니다. 실제 가사 전문을 시험 코드나 로그에 저장하지 않습니다.
+`tests/lyrics.test.mjs`는 벅스 우선 조회·LRCLIB 재검색·동일 곡 판별·lyrics.ovh 대체 조회·연주곡·장애와 가사 없음 구분·인증 정보 미전송·보안 정책을 모의 시험합니다. `tests/bugs.test.mjs`와 `tests/worker.test.mjs`는 벅스 검색 구조·가수 별칭·곡 길이·요청 제한·응답 검사·기존 화면 제공을 검증합니다. `tests/resume-check.js`는 일시적인 0 높이·복귀 신호·늦은 화면 크기 복원·중복 조회 억제·백그라운드 조회 중단·대체 가사의 안전한 표시·탐색 위치 유지·복귀 후 가사 재시도를 같은 Playwright 방식으로 검증합니다. `tests/bugs-browser-check.js`는 Spotify 재생을 모의 처리하고 실제 벅스 공개 조회로 가사를 받아 앱의 출처·일반 가사 표시를 확인합니다. 실제 가사 전문을 시험 코드나 로그에 저장하지 않습니다.
 
 ## 실기 호환과 상태 확인
 
