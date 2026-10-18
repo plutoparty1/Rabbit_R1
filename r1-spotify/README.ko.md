@@ -31,7 +31,7 @@
 
 <table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/player-240x282.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/lyrics-only-240x282.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/lyrics-controls-240x282.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
 
-240 × 282 브라우저 모의 시험 이미지입니다. 실제 Spotify 계정이나 실기 촬영 화면이 아닙니다.
+시올의 **밤을 노래하자**(앨범 **왜곡된 시선**)를 사용한 240 × 282 미리보기입니다. 재생 응답은 모의 데이터이며 개인 계정을 사용하지 않았습니다. 가사는 짧은 발췌만 표시하며, 벅스 일반 가사에는 시간 정보가 없어 따라가기가 비활성화됩니다. 곡 정보·앨범아트 출처: [벅스](https://music.bugs.co.kr/track/32794635).
 
 ## 시작하기
 
@@ -165,6 +165,8 @@ npx wrangler dev --config wrangler.example.jsonc --port 8791
 Spotify의 개발자 모드 제한은 **각 Spotify 앱**에 적용됩니다. 저장소를 포크하거나 소스를 다운로드할 수 있는 인원 제한이 아닙니다. 2026-10-18 확인 기준 앱 소유자는 Premium이어야 하며 앱당 인증 사용자는 최대 5명이고 허용 목록 등록이 필요합니다. 하나의 Client ID로 더 많은 사용자에게 제공하려면 별도의 확장 할당량 승인이 필요합니다. 최신 조건은 [Spotify 공식 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)을 확인합니다.
 
 ## 개인정보와 인증
+
+공용 배포는 사용자의 개인 Client ID와 Spotify 로그인으로 재생을 제어합니다. 저장소 소유자의 Spotify 계정을 공유하지 않습니다. 2026-10-18 서버의 이전 가사 브리지 URL·인증 키를 제거하고 재배포했으며 개인 Spotify 세션 없이 공개 가사 제공처로 대체 조회합니다. 사이트 호스팅은 프로젝트 운영자의 Sites 계정이 담당합니다. 같은 기기·브라우저를 다른 사람에게 넘기기 전에는 연결을 해제합니다.
 
 | 데이터 | 처리 방식 |
 | --- | --- |

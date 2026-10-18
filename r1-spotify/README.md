@@ -31,7 +31,7 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 <table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/player-240x282.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/lyrics-only-240x282.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/lyrics-controls-240x282.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
-240 × 282 browser test captures with mocked responses, rather than live account or hardware photography.
+240 × 282 previews featuring **밤을 노래하자** by **시올**, from **왜곡된 시선**. Playback is mocked and no personal account was used. Only a short lyric excerpt is displayed; plain Bugs lyrics have no timestamps, so following is disabled. Track information and artwork: [Bugs](https://music.bugs.co.kr/track/32794635).
 
 ## Get started
 
@@ -165,6 +165,8 @@ The local address is for development. Use your deployed HTTPS URL for r1 install
 Spotify development-mode limits apply to **each Spotify app**, not to how many people may fork or download the source. As checked on 2026-10-18, the app owner needs Premium and each app supports up to five authenticated, allowlisted users. Serving a larger audience with one Client ID requires separate extended quota approval. Check the [official Spotify policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) for current conditions.
 
 ## Privacy and authentication
+
+The hosted app controls playback using each user's own Client ID and Spotify login, without sharing the repository owner's Spotify account. On 2026-10-18, the old server-side lyrics bridge URL and authentication key were removed and the app redeployed. Public lyric providers supply fallback lyrics without a personal Spotify session. Hosting remains under the operator's Sites account. Disconnect before another person uses the same device/browser.
 
 | Data | Handling |
 | --- | --- |
