@@ -3,5 +3,13 @@
   "main": "dist/server/index.js",
   "compatibility_date": "2026-10-18",
   "workers_dev": true,
-  "build": { "command": "node scripts/build.mjs" }
+  "build": {
+    "command": "node scripts/build.mjs"
+  },
+  "r2_buckets": [
+    {
+      "binding": "PAIRING",
+      "bucket_name": "r1-spotify-pairing"
+    }
+  ]
 }

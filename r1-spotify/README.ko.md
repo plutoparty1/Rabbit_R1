@@ -76,14 +76,18 @@ https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
 
 **끝의 `/`까지 정확히 일치해야 합니다.** R1 Spotify의 연결 화면에도 현재 주소와 ‘주소 복사’ 버튼이 있습니다. 다른 배포 주소를 쓰는 경우 그 화면의 주소를 등록합니다. GitHub 저장소 주소를 Redirect URI로 넣지 않습니다.
 
-### 4. Client ID를 r1에 입력하고 로그인
+### 4. 휴대폰에서 Client ID를 보내고 로그인
 
-1. 본인 Spotify 앱 **Settings**에서 **Client ID** 32자리를 복사합니다.
-2. r1의 R1 Spotify 연결 화면에서 **Client ID** 입력란에 붙여 넣거나 입력합니다.
-3. **Client ID 저장 후 로그인**을 누르고 본인 Spotify 계정으로 로그인·동의합니다.
-4. 같은 계정의 다른 기기에서 곡을 재생하고 r1에서 현재 곡과 조작을 확인합니다.
+1. r1에서 **휴대폰으로 설정 · QR / 연결 코드**를 누릅니다.
+2. **휴대폰 카메라로 r1의 QR을 스캔**합니다. 코드가 자동 입력된 연결 페이지가 열립니다.
+3. 휴대폰·PC의 본인 Spotify 앱 **Settings**에서 **Client ID** 32자리를 복사해 연결 페이지에 붙여 넣고 **r1으로 보내기**를 누릅니다.
+4. 두 화면의 끝 8자리가 같은지 확인하고 r1에서 **이 Client ID 사용**을 누릅니다.
+5. r1에서 **내 기기** 또는 **공용 기기**를 선택하고 **Client ID 저장 후 로그인**을 눌러 Spotify 로그인·동의를 완료합니다.
+6. 같은 Spotify 계정의 다른 기기에서 음악을 재생합니다.
 
-**Client Secret은 필요 없으며 입력하지 않습니다.** Client ID 설정은 현재 기기·브라우저에 저장되므로 휴대폰에서 입력했다면 r1에도 별도로 입력합니다. QR에 개인 Client ID나 인증 토큰을 포함할 필요는 없습니다.
+**QR을 스캔하기 어렵다면** 휴대폰·PC에서 [연결 페이지](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/pair.html)를 열고 r1에 표시된 8자리 코드를 입력합니다. 코드는 10분 동안 유효합니다. 만료·중복 전송·잘못된 ID 수신 시 **새 코드 만들기**를 사용합니다. Client ID 직접 입력도 지원합니다.
+
+**Client Secret은 필요 없으며 입력하지 않습니다.** QR에는 임시 연결 코드만 담깁니다. Client ID와 Spotify 로그인 토큰은 QR에 담기지 않습니다. 서버는 공개 식별자인 Client ID만 전달하고 Spotify 로그인은 r1에서 진행합니다. 받은 ID를 적용해도 직접 로그인하기 전까지 기존 연결을 바꾸지 않습니다.
 
 ### 내 기기·공용 기기 선택
 
@@ -188,6 +192,7 @@ Spotify의 개발자 모드 제한은 **각 Spotify 앱**에 적용됩니다. �
 | 접근·갱신 토큰 | 내 기기: 보안 저장소·IndexedDB; 공용 기기: 현재 페이지 메모리만 사용; localStorage나 서버에는 저장하지 않음 |
 | 진행 중 OAuth 정보 | 내 기기: localStorage, 공용 기기: 같은 탭 sessionStorage에 10분 유효 기간으로 보관; 일회용 state·PKCE 사용, 완료·연결 해제·만료 확인 시 폐기 |
 | Client ID | 내 기기: localStorage, 공용 기기: 같은 탭 sessionStorage에 공개 식별자만 저장 |
+| 휴대폰 연결 중계 | 공개 Client ID·수신 기기 확인용 해시·만료 시각을 Sites 저장소에 임시 저장. Spotify 인증값은 저장하지 않음. 적용·취소한 요청은 삭제하며 만료 즉시 사용 불가. 방치된 만료 기록은 새 연결 생성 시 정리 |
 | 벅스 조회 | 제목·가수·앨범·곡 길이만 전달, Spotify 토큰 미전송 |
 | 다른 가사 조회 | 해당 제공처에 곡 메타데이터 전달, Spotify 인증값 미전송 |
 
@@ -248,7 +253,7 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261018-r20`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261018-r21`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
 ## 라이선스
 
@@ -274,3 +279,9 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 - [LRCLIB](https://lrclib.net/docs) · [lyrics.ovh](https://github.com/NTag/lyrics.ovh#api)
 
 직접 제작한 SVG 프로젝트 로고·히어로·구조도는 [docs/assets](docs/assets)에 있습니다. 기기 일러스트는 개념 이미지입니다. Spotify와 rabbit 명칭의 권리는 각 소유자에게 있으며 공식 제휴·보증 프로젝트가 아닙니다. [jev-gate](https://github.com/MongLong0214/jev-gate)의 시각적 정보 구성을 참고했고 해당 에셋을 복제하지 않았습니다.
+
+### 휴대폰 연결 호스팅
+
+기존 Sites 호스팅에서 `PAIRING`이라는 R2 바인딩으로 중계합니다. 사용자가 별도 호스팅 계정을 만들 필요가 없으며 호스팅을 이전하지 않습니다. 무작위 8자리 코드는 10분 후 만료되고 ID 전송은 한 번만 가능합니다. 별도의 256비트 수신 비밀값을 가진 원래 기기만 ID를 가져올 수 있습니다. 같은 출처 확인·요청 크기 제한·IP별 요청 제한을 적용합니다. QR은 MIT 라이브러리로 기기에서 생성하며 외부 QR 서비스에 주소를 보내지 않습니다.
+
+직접 호스팅하는 개발자는 Worker에 `PAIRING` 이름으로 R2 버킷을 연결합니다. Wrangler 예제에 해당 바인딩을 선언했으므로 버킷을 만들고 예제 버킷명을 변경합니다. 저장소가 없으면 휴대폰 연결은 사용 불가로 안내하고 직접 입력·로그인은 계속 동작합니다. [QR 라이브러리 라이선스](docs/licenses/qrcode-generator-LICENSE.txt).

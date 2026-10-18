@@ -1,13 +1,15 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r20';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r20';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r20';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r21';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r21';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r21';
 const applyStaticLocale = createStaticTranslator(document);
+import { setupPairing } from './pair-device.mjs?v=20261018-r21';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
 const client = new SpotifyClient({ redirectUri });
 let startupReady = false;
+let pairingController = null;
 let player = normalizePlayer(null), sampledAt = performance.now(), busy = false, stale = false;
 let screen = 'player', pollTimer, revision = 0, lastAction = -Infinity;
 let volumeTarget = null, volumeDevice = null, volumeTimer;
@@ -30,6 +32,7 @@ function fitViewport() {
 fitViewport(); window.addEventListener('resize', fitViewport); window.visualViewport?.addEventListener('resize', fitViewport);
 
 function show(view) {
+  if (screen === 'pair' && view !== 'pair') pairingController?.cancel();
   // 다른 화면으로 이동하면 아직 전송하지 않은 볼륨 입력을 취소합니다.
   if (view !== 'player') { clearTimeout(volumeTimer); volumeTarget = null; }
   screen = view;
@@ -272,7 +275,7 @@ function scrollInput(direction, source) {
   lastScroll = { direction, source, at: now };
   $('input-status').textContent = t('휠 {direction} 입력 확인 · {count}회', getLocale(), { direction: direction < 0 ? t('위') : t('아래'), count: ++wheelCount });
   if (screen === 'lyrics') { stopFollowing(); $('lyrics-lines').scrollTop += direction * 65; }
-  else if (screen === 'settings') $('settings-view').scrollTop += direction * 65;
+  else if (screen === 'settings' || screen === 'pair') $(screen + '-view').scrollTop += direction * 65;
   else if (screen === 'player') adjustVolume(-direction * 5);
 }
 for (const [event, direction] of [['scrollUp', -1], ['scrollDown', 1]]) window.addEventListener(event, () => scrollInput(direction, 'rabbit'), { capture: true });
@@ -291,7 +294,7 @@ document.addEventListener('keydown', event => {
   if (['ArrowUp', 'ArrowDown'].includes(event.key) && !editingText(event.target)) {
     event.preventDefault(); scrollInput(event.key === 'ArrowUp' ? -1 : 1, 'keyboard'); return;
   }
-  if (screen === 'settings' || ['INPUT', 'TEXTAREA', 'BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName) || event.repeat) return;
+  if (screen === 'settings' || screen === 'pair' || ['INPUT', 'TEXTAREA', 'BUTTON', 'SUMMARY', 'A'].includes(event.target.tagName) || event.repeat) return;
   const action = { ArrowLeft: 'previous', ArrowRight: 'next', ' ': 'toggle' }[event.key];
   if (action) { event.preventDefault(); operate(action); }
 });
@@ -304,6 +307,12 @@ $('copy-redirect').onclick = async () => {
   try { await navigator.clipboard.writeText(redirectUri); $('copy-message').textContent = t('복사했습니다.'); }
   catch { $('copy-message').textContent = t('복사할 수 없습니다. 위 주소를 길게 눌러 복사해 주세요.'); }
 };
+pairingController = setupPairing({ show, apply(id) {
+  $('client-id').value = id;
+  $('restore-client-id').hidden = true;
+  $('setup-guide').open = false;
+  $('auth-message').textContent = t('Client ID를 받았습니다. 기기 사용 방식을 선택하고 로그인해 주세요.');
+} });
 $('cover').onerror = () => { $('cover').hidden = true; $('empty-art').hidden = false; $('empty-message').textContent = t('앨범아트를 불러오지 못했습니다.'); };
 const modeInputs = [...document.querySelectorAll('input[name="device-mode"]')];
 for (const input of modeInputs) {

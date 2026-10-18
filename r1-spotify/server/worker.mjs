@@ -3,10 +3,13 @@ import { getBugsLyrics } from './bugs.mjs';
 import assets from './assets.mjs';
 import { getSpotifyLyrics, validSpotifyLyricsInput } from './spotify-lyrics.mjs';
 import { getBridgeLyrics } from './lyrics-bridge.mjs';
+import { pairing } from './pairing.mjs';
 
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+    const pairResponse = await pairing(request, env);
+    if (pairResponse) return pairResponse;
     if (url.pathname === '/api/lyrics/spotify') {
       const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
       if (request.method !== 'GET') return Response.json({ message: 'GET required' }, { status: 405, headers: { ...headers, Allow: 'GET' } });

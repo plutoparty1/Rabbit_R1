@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'">
+  <title>R1 Spotify · Phone setup</title>
+  <link rel="stylesheet" href="./style.css?v=20261018-r21">
+</head>
+<body class="phone-setup">
+  <main id="phone-app" class="settings">
+    <p class="phone-brand">R1 SPOTIFY</p><h1>휴대폰으로 r1 연결</h1>
+    <p>r1의 QR을 스캔하거나 연결 코드를 입력한 뒤 본인 Client ID를 보내 주세요.</p>
+    <details><summary>처음이라면 Spotify 앱부터 만들기</summary>
+      <p>휴대폰이나 PC에서 Developer Dashboard를 열고 본인 Premium 계정으로 로그인합니다. Create app에서 이름·설명을 입력하고 Web API를 선택합니다.</p>
+      <p><a href="https://developer.spotify.com/dashboard" target="_blank" rel="noopener noreferrer">Developer Dashboard 열기</a></p>
+      <p>Spotify 앱 Settings의 Redirect URIs에 아래 주소를 끝의 /까지 그대로 등록하고 저장합니다.</p>
+      <input id="phone-redirect" readonly aria-label="돌아올 주소"><button id="phone-copy-redirect" type="button">주소 복사</button>
+      <p>Spotify 앱 Settings에서 Client ID를 복사합니다. Client Secret은 필요하지 않습니다.</p>
+    </details>
+    <form id="send-client-form" novalidate>
+      <label for="pair-code-input">r1의 8자리 연결 코드</label><input id="pair-code-input" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD-2345" required>
+      <label for="phone-client-id">본인 앱의 Client ID 32자리</label><input id="phone-client-id" maxlength="32" autocomplete="off" autocapitalize="off" spellcheck="false" required>
+      <button id="send-client-id" class="primary" type="submit">r1으로 보내기</button>
+    </form>
+    <p id="phone-message" role="status"></p>
+    <section id="phone-success" hidden><h2>r1으로 보냈습니다.</h2><p>r1에 표시된 Client ID 끝 8자리가 아래와 같은지 확인하고 적용해 주세요.</p><code id="phone-suffix"></code><p>Spotify 로그인은 r1에서 진행합니다. 이 페이지를 닫아도 됩니다.</p></section>
+    <p class="fine">코드는 10분 동안 유효합니다. Client ID만 전달하며 비밀번호·Client Secret·Spotify 로그인 토큰은 입력하지 않습니다.</p>
+  </main>
+  <script type="module" src="./pair.mjs?v=20261018-r21"></script>
+</body></html>

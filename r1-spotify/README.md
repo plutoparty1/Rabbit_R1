@@ -76,14 +76,18 @@ https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
 
 **Match the trailing `/` too.** R1 Spotify's connection screen shows its current address with a copy button. For another deployment, register the address shown there. Do not use the GitHub repository URL as your Redirect URI.
 
-### 4. Enter your Client ID on r1 and log in
+### 4. Send your Client ID from your phone and log in
 
-1. Copy the 32-character **Client ID** from your own Spotify app's **Settings**.
-2. Enter or paste it into **Client ID** on r1's R1 Spotify connection screen.
-3. Select **Save Client ID and log in**, then sign in and grant access with your own Spotify account.
-4. Play a track on another device with the same account and check information and controls on r1.
+1. On r1, choose **Set up with phone · QR / code**.
+2. Scan the QR **with your phone camera**. The phone setup page opens with the code filled in.
+3. On your phone or computer, copy the 32-character **Client ID** from your own Spotify app's **Settings**, paste it into the setup page, and select **Send to r1**.
+4. Compare the last 8 characters on both screens, then choose **Use this Client ID** on r1.
+5. Choose **My device** or **Shared device**, then select **Save Client ID and log in** on r1. Sign in and grant Spotify access there.
+6. Play music on another device using the same Spotify account.
 
-**No Client Secret is needed or accepted.** The Client ID preference is saved per device/browser: entering it on your phone does not configure r1. You do not need to embed a personal Client ID or tokens in the QR.
+**Cannot scan?** Open the [phone setup page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/pair.html) on your phone/PC and enter the 8-character code shown on r1. Codes expire after 10 minutes. Select **Create a new code** if expired, already used, or sent by the wrong person. Direct Client ID entry remains available.
+
+**No Client Secret is needed or accepted.** The QR contains only a temporary connection code. It carries no Client ID or Spotify login token. The relay sends only your public Client ID; Spotify login stays on r1. Applying a received ID does not change an existing connection until you explicitly log in.
 
 ### Choose My device or Shared device
 
@@ -188,6 +192,7 @@ The hosted app controls playback using each user's own Client ID and Spotify log
 | Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage or the site server |
 | Pending OAuth transaction | My device: localStorage; Shared device: same-tab sessionStorage; 10-minute expiry, one-time state and PKCE verifier; removed on completion, disconnect or expiry checks |
 | Client ID | Public identifier only; localStorage for My device, same-tab sessionStorage for Shared device |
+| Phone setup relay | Public Client ID, receiver-proof hash and expiry temporarily in Sites storage; no Spotify credentials. Received/cancelled sessions are deleted. Expired sessions cannot be used and abandoned records are pruned during new-session creation. |
 | Bugs request | Track title, artist, album and duration only; no Spotify token |
 | Other lyrics requests | Track metadata sent to the selected provider; no Spotify credentials |
 
@@ -248,7 +253,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261018-r20`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r21`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 
@@ -274,3 +279,9 @@ Report problems in [GitHub Issues](https://github.com/plutoparty1/Rabbit_R1/issu
 - [LRCLIB](https://lrclib.net/docs) and [lyrics.ovh](https://github.com/NTag/lyrics.ovh#api)
 
 Original SVG project mark, hero and architecture assets live in [docs/assets](docs/assets). The illustrated device is a concept graphic. Spotify and rabbit names belong to their respective owners; this community project is not affiliated with or endorsed by either company. Visual hierarchy was informed by [jev-gate](https://github.com/MongLong0214/jev-gate); its assets were not copied.
+
+### Phone setup hosting
+
+The existing Sites host provides the relay through an R2 binding named `PAIRING`; no new hosting account is required for users. The host remains unchanged. Eight-character random codes expire after 10 minutes, submissions are one-time, and only the originating device can retrieve a Client ID using its separate 256-bit receiver secret. Same-origin checks, bounded request bodies and per-IP rate limits protect relay endpoints. The QR renderer is vendored locally under MIT; no external QR service receives the URL.
+
+For an optional self-hosted deployment, bind an R2 bucket as `PAIRING` in your Worker configuration. The included Wrangler example declares this binding; create a bucket and replace the example bucket name. Without storage, direct entry and login still work, and phone setup reports that it is unavailable. [QR library license](docs/licenses/qrcode-generator-LICENSE.txt).
