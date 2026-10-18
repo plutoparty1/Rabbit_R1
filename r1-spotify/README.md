@@ -29,9 +29,9 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Preview
 
-<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
+<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
-240 × 282 previews featuring **밤을 노래하자** by **시올**, from **왜곡된 시선**. Playback is mocked and no personal account was used. Only a short lyric excerpt is displayed; plain Bugs lyrics have no timestamps, so following is disabled. Track information and artwork: [Bugs](https://music.bugs.co.kr/track/32794635).
+240 × 282 English UI previews featuring **Sing the Night** by **Siol**, from **Distorted Gaze**. Song and album display names are translated for this preview. Track metadata and artwork: [Bugs](https://music.bugs.co.kr/track/32794635). Playback is mocked; lyrics screenshots use labeled layout sample text, not the complete song lyrics. The actual app renders the provider’s full response in its original language and supports scrolling to the end.
 
 ## Get started
 
@@ -218,6 +218,10 @@ Disconnect removes saved credentials and records a logout marker to block restor
 
 Foreground polling pauses while the app is hidden. Resume signals are coalesced, viewport size is rechecked, stale responses and queued volume input are invalidated, and displayed lyrics/free-scroll position are retained where possible. Failed skip commands are not blindly retried.
 
+## Full lyrics and scrolling
+
+The live view renders every returned paragraph rather than a fixed excerpt. Use the wheel or touch to scroll; the bottom hint changes to End of lyrics at the final paragraph. Provider line endings are normalized. Plain lyrics have no synchronized following; missing provider content cannot be reconstructed by the app. A static preview shows only its visible viewport. The browser regression test checks all 120 synthetic paragraphs and the final scroll position.
+
 ## Development
 
 ```text
@@ -250,7 +254,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261018-r17`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r18`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

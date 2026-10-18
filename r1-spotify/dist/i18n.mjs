@@ -5,6 +5,9 @@ export function getLocale(source = globalThis.navigator) {
 }
 
 const english = {
+  '가사 끝': 'End of lyrics',
+  '전체 가사 · 휠이나 터치로 아래로 탐색': 'Full lyrics · scroll down with wheel or touch',
+  '버전 20261018-r18 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r18 · Disconnect removes saved login data.',
 "이 기기는 누구와 사용하나요?": "Who uses this device?",
 "내 기기 · 로그인 유지": "My device · keep me signed in",
 "공용 기기 · 이번만 로그인": "Shared device · this visit only",

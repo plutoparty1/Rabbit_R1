@@ -1,7 +1,7 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r17';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r17';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r17';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r18';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r18';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r18';
 const applyStaticLocale = createStaticTranslator(document);
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
@@ -164,7 +164,7 @@ async function loadLyrics() {
   const request = ++lyricRevision, track = player;
   lines = []; activeLine = -1; following = $('follow').checked; $('follow').disabled = true;
   $('lyrics-lines').replaceChildren(); $('lyrics-lines').classList.remove('plain');
-  $('lyrics-lines').scrollTop = 0;
+  $('lyrics-lines').scrollTop = 0; $('lyrics-scroll-hint').hidden = true;
   $('lyrics-empty').hidden = !$('lyrics-controls').hidden;
   $('lyrics-title').textContent = track.title || t('가사');
   // 이전 곡의 제공처를 남기지 않고 현재 응답의 출처만 표시합니다.
@@ -180,12 +180,12 @@ async function loadLyrics() {
     lines = parseLrc(result.syncedLyrics);
     $('follow').disabled = !lines.length;
     if (!lines.length) { following = false; $('follow').checked = false; }
-    const texts = lines.length ? lines.map(line => line.text) : (result.plainLyrics || '').split(/\r?\n/).filter(Boolean);
+    const texts = lines.length ? lines.map(line => line.text) : (result.plainLyrics || '').split(/\r\n?|\n|\u2028|\u2029/).filter(text => text.trim());
     $('lyrics-lines').classList.toggle('plain', !lines.length);
     lyricsStatus(lines.length ? t('휠로 가사를 탐색할 수 있습니다.') : texts.length ? t('시간 정보가 없는 일반 가사입니다.') : t('이 곡의 가사가 없습니다.'));
     const fragment = document.createDocumentFragment();
     for (const text of texts) { const row = document.createElement('p'); row.textContent = text || '♪'; fragment.append(row); }
-    $('lyrics-lines').append(fragment); $('lyrics-empty').hidden = texts.length > 0 || !$('lyrics-controls').hidden; tick();
+    $('lyrics-lines').append(fragment); requestAnimationFrame(updateLyricsScrollHint); $('lyrics-empty').hidden = texts.length > 0 || !$('lyrics-controls').hidden; tick();
   } catch (error) { if (request === lyricRevision) lyricsStatus(t(error.message)); }
 }
 function tick() {
@@ -208,6 +208,13 @@ function scrollToCurrent() {
   // 오래된 WebView가 옵션 객체를 무시해도 현재 줄이 보이도록 직접 이동합니다.
   area.scrollTop = top;
 }
+function updateLyricsScrollHint() {
+  const area = $('lyrics-lines'), hint = $('lyrics-scroll-hint');
+  hint.hidden = screen !== 'lyrics' || area.scrollHeight <= area.clientHeight + 2;
+  if (!hint.hidden) hint.textContent = t(area.scrollTop + area.clientHeight >= area.scrollHeight - 3 ? '가사 끝' : '전체 가사 · 휠이나 터치로 아래로 탐색');
+}
+$('lyrics-lines').addEventListener('scroll', updateLyricsScrollHint, { passive: true });
+window.addEventListener('resize', updateLyricsScrollHint);
 function stopFollowing() { following = false; $('follow').checked = false; }
 
 // 터치 취소와 세로 이동을 구분하고 스와이프 뒤의 클릭을 가사 열기로 처리하지 않습니다.
