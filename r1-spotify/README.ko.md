@@ -29,13 +29,13 @@
 
 ## 화면 미리보기
 
-<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/player-240x282.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/lyrics-only-240x282.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/lyrics-controls-240x282.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
+<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/previews/siol-night-player.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/previews/siol-night-lyrics.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/previews/siol-night-controls.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
 
 시올의 **밤을 노래하자**(앨범 **왜곡된 시선**)를 사용한 240 × 282 미리보기입니다. 재생 응답은 모의 데이터이며 개인 계정을 사용하지 않았습니다. 가사는 짧은 발췌만 표시하며, 벅스 일반 가사에는 시간 정보가 없어 따라가기가 비활성화됩니다. 곡 정보·앨범아트 출처: [벅스](https://music.bugs.co.kr/track/32794635).
 
 ## 시작하기
 
-**공용 실행 사이트 + 본인 Spotify Client ID**로 사용합니다. 서버 배포나 저장소 소유자의 Spotify 초대는 필요 없습니다. 처음 한 번 아래 설정을 마치면 이후 기기에 저장된 연결을 복원합니다.
+**공용 실행 사이트 + 본인 Spotify Client ID**로 사용합니다. 서버 배포나 저장소 소유자의 Spotify 초대는 필요 없습니다. 처음 설정 후 ‘내 기기’에서는 연결을 복원하고 ‘공용 기기’에서는 이번 실행에만 로그인합니다.
 
 ### 준비물
 
@@ -85,6 +85,17 @@ https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
 
 **Client Secret은 필요 없으며 입력하지 않습니다.** Client ID 설정은 현재 기기·브라우저에 저장되므로 휴대폰에서 입력했다면 r1에도 별도로 입력합니다. QR에 개인 Client ID나 인증 토큰을 포함할 필요는 없습니다.
 
+### 내 기기·공용 기기 선택
+
+Client ID 입력란 위에서 로그인 보관 방식을 선택합니다.
+
+| 선택 | 로그인 보관 | 다시 열었을 때 |
+| --- | --- | --- |
+| 내 기기 · 로그인 유지 | rabbit 보안 저장소·IndexedDB에 저장 | 저장된 로그인을 복원 |
+| 공용 기기 · 이번만 로그인 | 인증 토큰은 현재 페이지 메모리에만 보관 | 새로고침·재실행 시 다시 로그인 |
+
+기기 모드를 바꾸면 기존 연결을 해제하고 저장된 토큰을 삭제합니다. 공용 기기의 OAuth 로그인 준비 정보는 같은 탭의 sessionStorage에만 잠시 보관하고 완료 후 지웁니다. 따라서 로그인 도중 완전히 새 WebView로 돌아오는 기기는 인증을 마치지 못할 수 있습니다. 모드 선택 값은 인증값 없이 보관합니다. 사용 후 ‘이 기기 연결 해제’를 누르고, Spotify 자체 로그인 쿠키까지 종료하려면 Spotify에서도 로그아웃합니다. 앱은 Spotify 웹사이트의 로그인 쿠키를 삭제할 수 없습니다.
+
 ### 연결이 안 될 때
 
 | 증상 | 해결 방법 |
@@ -111,7 +122,7 @@ Spotify 개발자 모드의 인증 사용자·요청 제한은 **각 사용자�
 | 가사 | 좌우 스와이프 또는 Escape | 곡 변경 없이 재생 화면 복귀 |
 | 메뉴 | 점 세 개 | 연결 설정·연결 해제·도움말·기기 확인 |
 
-탭만으로 따라가기를 해제하지 않으며 체크박스 조작 시 설정 표시 시간이 다시 시작됩니다. 일반 가사는 시간 정보가 없어 따라가기가 비활성화됩니다. 세로 이동·짧은 터치·취소된 제스처는 복귀로 처리하지 않습니다. 현재 앱 인터페이스는 한국어이며 영어 README는 설치·사용 안내를 제공합니다.
+탭만으로 따라가기를 해제하지 않으며 체크박스 조작 시 설정 표시 시간이 다시 시작됩니다. 일반 가사는 시간 정보가 없어 따라가기가 비활성화됩니다. 세로 이동·짧은 터치·취소된 제스처는 복귀로 처리하지 않습니다. 앱은 WebView 언어에 따라 한국어·영어를 표시하며 가사 원문은 번역하지 않습니다.
 
 ## 동작 구조
 
@@ -124,6 +135,16 @@ Spotify 개발자 모드의 인증 사용자·요청 제한은 **각 사용자�
 벅스에서는 제목·가수 별칭과 곡 길이 차이 2초 이내를 확인하고 같은 앨범을 우선합니다. 중복을 제거한 최대 세 후보를 검사하며 버전명은 유지합니다. 영어 제목을 한국어로 자동 번역하지 않습니다. 벅스는 일반 가사를 반환하고, 없거나 실패하면 LRCLIB 정확 조회·검색과 lyrics.ovh를 순서대로 사용합니다. 가사 화면을 탭하면 실제 출처를 볼 수 있습니다.
 
 벅스 서버 조회는 전체 20초, 브라우저 대기는 25초로 제한합니다. 성공 응답은 기기에서 5분간 재사용할 수 있습니다. 제공처의 수록 범위·응답·공개 페이지 구조가 바뀌면 조회가 실패할 수 있습니다.
+
+## 프로젝트 전용 Cloudflare 호스팅
+
+**이전 준비 완료, 실제 이전 대기 중입니다.** 프로젝트 전용 Cloudflare 계정이 아직 생성되지 않아 현재 실행 주소는 기존 Sites 주소를 유지합니다. 일반 사용자의 Client ID 설정과 운영자의 호스팅 설정은 별개입니다.
+
+1. 운영자가 프로젝트 전용 Cloudflare 계정을 만들고 이메일 인증을 완료합니다.
+2. 아래 직접 배포 명령으로 해당 계정에 로그인·배포하거나, GitHub 저장소 Settings → Secrets and variables → Actions에 전용 계정의 `CLOUDFLARE_ACCOUNT_ID`와 `CLOUDFLARE_API_TOKEN`을 등록합니다. 토큰은 전용 계정의 Workers 편집 권한으로 한정하고 소스나 채팅에 넣지 않습니다.
+3. GitHub Actions의 **Deploy R1 Spotify to Cloudflare → Run workflow**를 실행합니다. [배포 워크플로](../.github/workflows/r1-spotify-cloudflare.yml)는 수동 실행 방식입니다.
+4. 실제 발급된 HTTPS 주소로 앱 접근·가사·개인/공용 로그인 모드를 확인합니다. 각 사용자는 자신의 Spotify 앱에 새 주소를 Redirect URI로 추가해야 합니다.
+5. [Creation 설치 정보](docs/install-creation.json), README의 실행·Redirect 주소, QR을 새 주소로 갱신한 뒤 기존 Sites 주소 사용을 종료합니다. 새 주소는 다른 출처이므로 기존 로그인은 옮겨지지 않습니다.
 
 ## 직접 배포
 
@@ -142,16 +163,16 @@ cd Rabbit_R1/r1-spotify
 ```powershell
 node scripts/build.mjs
 npx wrangler login
-npx wrangler deploy --config wrangler.example.jsonc
+npx wrangler deploy --config wrangler.jsonc
 ```
 
-[Wrangler 설정 예제](wrangler.example.jsonc)는 생성된 `dist/server/index.js`를 진입점으로 사용하며 빌드를 배포 전에 실행합니다. 필요하면 `name`을 변경합니다. 배포 계정은 본인 Cloudflare 계정을 사용합니다. CLI가 출력한 HTTPS 주소를 Spotify Redirect URI와 rabbit Creation URL에 등록합니다. 설정 항목은 [Cloudflare 공식 문서](https://developers.cloudflare.com/workers/wrangler/configuration/)를 참고합니다.
+[Wrangler 설정 예제](wrangler.jsonc)는 생성된 `dist/server/index.js`를 진입점으로 사용하며 빌드를 배포 전에 실행합니다. 필요하면 `name`을 변경합니다. 배포 계정은 본인 Cloudflare 계정을 사용합니다. CLI가 출력한 HTTPS 주소를 Spotify Redirect URI와 rabbit Creation URL에 등록합니다. 설정 항목은 [Cloudflare 공식 문서](https://developers.cloudflare.com/workers/wrangler/configuration/)를 참고합니다.
 
 로컬에서 화면과 서버를 함께 확인하려면:
 
 ```powershell
 node scripts/build.mjs
-npx wrangler dev --config wrangler.example.jsonc --port 8791
+npx wrangler dev --config wrangler.jsonc --port 8791
 ```
 
 이 주소는 개발용입니다. r1 설치와 실제 Spotify 로그인은 위에서 배포한 HTTPS 주소로 진행합니다. 프런트엔드를 수정한 뒤에는 다시 빌드합니다. 빌드는 기존 `dist` UI와 `bugs.mjs`·`assets.mjs`를 Worker로 묶습니다. 다른 호스팅을 쓰려면 같은 모듈 Worker 인터페이스와 `/api/lyrics/bugs` 경로를 지원해야 합니다.
@@ -170,9 +191,9 @@ Spotify의 개발자 모드 제한은 **각 Spotify 앱**에 적용됩니다. �
 
 | 데이터 | 처리 방식 |
 | --- | --- |
-| 접근·갱신 토큰 | rabbit 보안 저장소와 같은 출처의 기기 IndexedDB 백업에 저장; localStorage나 사이트 서버에는 저장하지 않음 |
-| 진행 중 OAuth 정보 | 같은 출처 localStorage에 10분 유효 기간으로 보관; 일회용 state·PKCE 사용, 완료·연결 해제·만료 확인 시 폐기 |
-| Client ID | 공개 앱 식별자로 localStorage에 저장 |
+| 접근·갱신 토큰 | 내 기기: 보안 저장소·IndexedDB; 공용 기기: 현재 페이지 메모리만 사용; localStorage나 서버에는 저장하지 않음 |
+| 진행 중 OAuth 정보 | 내 기기: localStorage, 공용 기기: 같은 탭 sessionStorage에 10분 유효 기간으로 보관; 일회용 state·PKCE 사용, 완료·연결 해제·만료 확인 시 폐기 |
+| Client ID | 내 기기: localStorage, 공용 기기: 같은 탭 sessionStorage에 공개 식별자만 저장 |
 | 벅스 조회 | 제목·가수·앨범·곡 길이만 전달, Spotify 토큰 미전송 |
 | 다른 가사 조회 | 해당 제공처에 곡 메타데이터 전달, Spotify 인증값 미전송 |
 
@@ -206,7 +227,7 @@ r1-spotify/
 ├── scripts/build.mjs     UI 포함 및 dist/server/ 생성
 ├── tests/                Node 테스트·Playwright 콜백 시나리오
 ├── docs/                 설치·화면·검증 기록·SVG
-├── wrangler.example.jsonc 배포 설정 예제
+├── wrangler.jsonc 배포 설정 예제
 ├── LICENSE               r1-spotify MIT 라이선스
 └── DESIGN.md             UI 설계 기록
 ```
@@ -229,7 +250,7 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261018-r16`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261018-r17`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
 ## 라이선스
 

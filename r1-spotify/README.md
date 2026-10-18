@@ -29,13 +29,13 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Preview
 
-<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/player-240x282.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/lyrics-only-240x282.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/lyrics-controls-240x282.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
+<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
 240 × 282 previews featuring **밤을 노래하자** by **시올**, from **왜곡된 시선**. Playback is mocked and no personal account was used. Only a short lyric excerpt is displayed; plain Bugs lyrics have no timestamps, so following is disabled. Track information and artwork: [Bugs](https://music.bugs.co.kr/track/32794635).
 
 ## Get started
 
-Use the **hosted app with your own Spotify Client ID**. You do not need a server deployment or an invitation to the repository owner's Spotify app. Complete the setup once; your device restores the saved connection on later visits.
+Use the **hosted app with your own Spotify Client ID**. You do not need a server deployment or an invitation to the repository owner's Spotify app. After setup, My device restores your connection; Shared device signs in for this page only.
 
 ### What you need
 
@@ -85,6 +85,17 @@ https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
 
 **No Client Secret is needed or accepted.** The Client ID preference is saved per device/browser: entering it on your phone does not configure r1. You do not need to embed a personal Client ID or tokens in the QR.
 
+### Choose My device or Shared device
+
+Choose a login retention mode above the Client ID field.
+
+| Choice | Credential storage | When reopened |
+| --- | --- | --- |
+| My device · keep me signed in | rabbit secure storage and IndexedDB | Restores the saved login |
+| Shared device · this visit only | Tokens remain in the current page's memory only | Login required after reload or reopening |
+
+Changing modes disconnects and removes saved tokens. Shared-mode OAuth preparation is kept only in the same tab's sessionStorage and cleared after completion. A device that returns OAuth in a completely new WebView may therefore be unable to finish shared-mode login. The non-secret mode preference is retained. Disconnect when finished; sign out on Spotify too if you need to end Spotify's own browser login. This app cannot delete Spotify website cookies.
+
 ### If connection fails
 
 | Symptom | Action |
@@ -111,7 +122,7 @@ Spotify development-mode user and request limits apply to **each user's own Spot
 | Lyrics | Swipe left / right, or Escape | Return to player without skipping tracks |
 | Menu | Three dots | Connection settings, disconnect, help and device diagnostics |
 
-Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls timer. Plain lyrics have no timed follow mode. Vertical drags, short touches and cancelled gestures do not close lyrics. The current app interface is Korean; this README provides English setup and usage guidance.
+Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls timer. Plain lyrics have no timed follow mode. Vertical drags, short touches and cancelled gestures do not close lyrics. The app follows the WebView language for Korean/English UI; original lyrics are not translated.
 
 ## How it works
 
@@ -124,6 +135,16 @@ The browser calls Spotify directly for authentication and playback control. A sa
 Bugs matching checks title, artist aliases and a duration difference of at most 2 seconds, prefers the same album, and examines at most three deduplicated candidates. Version names are retained; English titles are not automatically translated into Korean. Bugs returns plain lyrics. If unavailable, the client tries LRCLIB exact lookup and search, then lyrics.ovh. Tap the lyrics view to see the actual provider.
 
 Bugs server lookup has a 20-second budget; the browser waits up to 25 seconds. Successful responses can be reused by the device for 5 minutes. Provider availability, coverage and public page structure may change.
+
+## Dedicated Cloudflare hosting
+
+**Migration is prepared but not yet live.** The dedicated Cloudflare account has not been created, so the current launch URL remains on Sites. Operator hosting setup is separate from each user's Spotify Client ID setup.
+
+1. The operator creates the project Cloudflare account and verifies its email.
+2. Sign in and deploy with the CLI below, or add that account's `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in repository Settings → Secrets and variables → Actions. Scope the token to Workers editing in that account; never place it in source or chat.
+3. Run **Deploy R1 Spotify to Cloudflare → Run workflow** in GitHub Actions. The [deployment workflow](../.github/workflows/r1-spotify-cloudflare.yml) is manually triggered.
+4. Check the actual HTTPS URL, lyrics and both login modes. Each user must add the new URL to their own Spotify app's Redirect URIs.
+5. Update [Creation configuration](docs/install-creation.json), launch/Redirect URLs in both READMEs and the QR before retiring the Sites launch URL. The new origin requires login again; old sessions are not transferred.
 
 ## Self-host
 
@@ -142,16 +163,16 @@ The frontend and server build without application package installation. `npx` do
 ```powershell
 node scripts/build.mjs
 npx wrangler login
-npx wrangler deploy --config wrangler.example.jsonc
+npx wrangler deploy --config wrangler.jsonc
 ```
 
-The [Wrangler example](wrangler.example.jsonc) uses the generated `dist/server/index.js` entry point and runs the build before deployment. Change `name` if desired and deploy through your own Cloudflare account. Register the HTTPS URL printed by the CLI in Spotify and rabbit Creation. See the [Cloudflare configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/) for configuration details.
+The [Wrangler example](wrangler.jsonc) uses the generated `dist/server/index.js` entry point and runs the build before deployment. Change `name` if desired and deploy through your own Cloudflare account. Register the HTTPS URL printed by the CLI in Spotify and rabbit Creation. See the [Cloudflare configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/) for configuration details.
 
 To preview the frontend and server locally:
 
 ```powershell
 node scripts/build.mjs
-npx wrangler dev --config wrangler.example.jsonc --port 8791
+npx wrangler dev --config wrangler.jsonc --port 8791
 ```
 
 The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI with `bugs.mjs` and `assets.mjs` into the Worker. Other hosting must support the same module Worker interface and `/api/lyrics/bugs` route.
@@ -170,9 +191,9 @@ The hosted app controls playback using each user's own Client ID and Spotify log
 
 | Data | Handling |
 | --- | --- |
-| Access and refresh tokens | Native rabbit secure storage plus an on-device, same-origin IndexedDB backup; not localStorage or the site server |
-| Pending OAuth transaction | Same-origin localStorage, 10-minute expiry, one-time state and PKCE verifier; removed on completion, disconnect or expiry checks |
-| Client ID | Public app identifier stored in localStorage |
+| Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage or the site server |
+| Pending OAuth transaction | My device: localStorage; Shared device: same-tab sessionStorage; 10-minute expiry, one-time state and PKCE verifier; removed on completion, disconnect or expiry checks |
+| Client ID | Public identifier only; localStorage for My device, same-tab sessionStorage for Shared device |
 | Bugs request | Track title, artist, album and duration only; no Spotify token |
 | Other lyrics requests | Track metadata sent to the selected provider; no Spotify credentials |
 
@@ -206,7 +227,7 @@ r1-spotify/
 ├── scripts/build.mjs     Embeds UI and generates dist/server/
 ├── tests/                Node tests and Playwright callback scenarios
 ├── docs/                 Installation, screenshots, evidence and SVG assets
-├── wrangler.example.jsonc Deployment configuration example
+├── wrangler.jsonc Deployment configuration example
 ├── LICENSE               MIT license for r1-spotify
 └── DESIGN.md             UI design notes
 ```
@@ -229,7 +250,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261018-r16`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r17`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

@@ -11,7 +11,7 @@ export function normalizePlayer(data) {
   const images = (track.album?.images || []).filter(image => /^https:\/\/i\.scdn\.co\//.test(image.url));
   const image = [...images].sort((a, b) => a.width - b.width).find(item => item.width >= 240) || images[0];
   return {
-    status: 'ready', id: track.id || track.uri, title: track.name || '제목 미제공',
+    status: 'ready', id: track.id || track.uri, title: track.name || '제목 미제공', titleMissing: !track.name,
     artist: (track.artists || []).map(artist => artist.name).join(', '),
     primaryArtist: track.artists?.[0]?.name || '', album: track.album?.name || '',
     image: image?.url || '', url: /^https:\/\/open\.spotify\.com\//.test(track.external_urls?.spotify) ? track.external_urls.spotify : '',

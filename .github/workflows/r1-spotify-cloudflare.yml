@@ -1,0 +1,29 @@
+name: Deploy R1 Spotify to Cloudflare
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: r1-spotify-cloudflare
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate
+        working-directory: r1-spotify
+        run: |
+          node scripts/build.mjs
+          node --test tests/*.test.mjs
+      - name: Deploy through the project Cloudflare account
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: r1-spotify
+          command: deploy --config wrangler.jsonc

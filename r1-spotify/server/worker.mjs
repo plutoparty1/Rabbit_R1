@@ -1,10 +1,31 @@
 // 기존 화면과 같은 출처에서 벅스를 조회하여 브라우저의 외부 연결 제한을 해결합니다.
 import { getBugsLyrics } from './bugs.mjs';
 import assets from './assets.mjs';
+import { getSpotifyLyrics, validSpotifyLyricsInput } from './spotify-lyrics.mjs';
+import { getBridgeLyrics } from './lyrics-bridge.mjs';
 
 export default {
-  async fetch(request) {
+  async fetch(request, env = {}) {
     const url = new URL(request.url);
+    if (url.pathname === '/api/lyrics/spotify') {
+      const headers = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff' };
+      if (request.method !== 'GET') return Response.json({ message: 'GET required' }, { status: 405, headers: { ...headers, Allow: 'GET' } });
+      const trackId = url.searchParams.get('track_id') || '';
+      const language = url.searchParams.get('language') || 'en';
+      if (!validSpotifyLyricsInput(trackId, language)) return Response.json({ message: 'Invalid track or language' }, { status: 400, headers });
+      if (!env.SPOTIFY_LYRICS_BRIDGE_URL && !env.SPOTIFY_LYRICS_WEB_TOKEN) return Response.json({ message: 'Spotify lyrics session not configured' }, { status: 503, headers });
+      try {
+        const result = env.SPOTIFY_LYRICS_BRIDGE_URL
+          ? await getBridgeLyrics(trackId, language, env.SPOTIFY_LYRICS_BRIDGE_URL, env.SPOTIFY_LYRICS_BRIDGE_KEY)
+          : await getSpotifyLyrics(trackId, language, env.SPOTIFY_LYRICS_WEB_TOKEN);
+        return Response.json(result || { message: 'Spotify lyrics not found' }, { status: result ? 200 : 404, headers });
+      } catch (error) {
+        const safeReason = error instanceof Error && /^(Invalid lyrics bridge configuration|Invalid lyrics bridge response|Lyrics bridge response too large|Lyrics bridge HTTP \d{3})$/.test(error.message)
+          ? error.message : error instanceof Error ? error.name : 'UnknownError';
+        console.error('Spotify lyrics unavailable:', safeReason);
+        return Response.json({ message: 'Spotify lyrics unavailable' }, { status: 502, headers });
+      }
+    }
     if (url.pathname === '/api/lyrics/bugs') {
       if (request.method !== 'GET') return Response.json({ message: 'GET 요청만 사용할 수 있습니다.' }, { status: 405, headers: { Allow: 'GET' } });
       const track = { title: url.searchParams.get('title') || '', artist: url.searchParams.get('artist') || '',

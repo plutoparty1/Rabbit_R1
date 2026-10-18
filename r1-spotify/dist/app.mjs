@@ -1,6 +1,9 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261008-r6';
-import { SpotifyClient, getLyrics } from './spotify.mjs?v=20261018-r16';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r17';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r17';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r17';
+const applyStaticLocale = createStaticTranslator(document);
+applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
 const client = new SpotifyClient({ redirectUri });
@@ -22,7 +25,7 @@ function fitViewport() {
   const height = Math.max(1, Math.floor(Math.min(innerHeight, visibleHeight)));
   document.documentElement.style.setProperty('--app-height', height + 'px');
   document.documentElement.classList.toggle('compact', height < 360);
-  $('viewport-status').textContent = `표시 영역: ${innerWidth}×${height}`;
+  $('viewport-status').textContent = t('표시 영역: {width}×{height}', getLocale(), { width: innerWidth, height });
 }
 fitViewport(); window.addEventListener('resize', fitViewport); window.visualViewport?.addEventListener('resize', fitViewport);
 
@@ -41,33 +44,33 @@ function controls() {
   $('next').disabled = busy || stale || !player.canNext;
   $('toggle').disabled = busy || stale || !player.canToggle;
   $('toggle').textContent = player.playing ? 'Ⅱ' : '▶';
-  $('toggle').setAttribute('aria-label', player.playing ? '일시정지' : '재생');
+  $('toggle').setAttribute('aria-label', player.playing ? t('일시정지') : t('재생'));
 }
 function render() {
   const ready = player.status === 'ready';
-  $('artist').textContent = ready ? player.artist : '아티스트';
-  $('title').textContent = ready ? player.title : '재생 중인 음악';
-  $('album').textContent = ready ? player.album : '앨범';
+  $('artist').textContent = ready ? player.artist : t('아티스트');
+  $('title').textContent = ready ? (player.titleMissing ? t('제목 미제공') : player.title) : t('재생 중인 음악');
+  $('album').textContent = ready ? player.album : t('앨범');
   for (const id of ['artist', 'title', 'album']) $(id).title = $(id).textContent;
   $('cover').hidden = !ready || !player.image;
   $('empty-art').hidden = ready && Boolean(player.image);
   if (ready && player.image && $('cover').getAttribute('src') !== player.image) $('cover').src = player.image;
-  $('cover').alt = ready ? player.album + ' 앨범아트' : '';
-  $('empty-message').textContent = !client.connected ? 'Spotify를 연결해 주세요.' : player.status === 'unsupported' ? '음악 트랙을 재생해 주세요.' : ready ? '앨범아트가 없습니다.' : 'Spotify에서 곡을 재생해 주세요.';
-  document.querySelector('.empty-action').textContent = client.connected ? '' : '연결 설정';
+  $('cover').alt = ready ? t('{album} 앨범아트', getLocale(), { album: player.album }) : '';
+  $('empty-message').textContent = !client.connected ? t('Spotify를 연결해 주세요.') : player.status === 'unsupported' ? t('음악 트랙을 재생해 주세요.') : ready ? t('앨범아트가 없습니다.') : t('Spotify에서 곡을 재생해 주세요.');
+  document.querySelector('.empty-action').textContent = client.connected ? '' : t('연결 설정');
   $('art-button').disabled = false;
-  $('art-button').setAttribute('aria-label', ready ? '현재 곡 가사 보기' : 'Spotify 연결 설정');
+  $('art-button').setAttribute('aria-label', ready ? t('현재 곡 가사 보기') : t('Spotify 연결 설정'));
   $('spotify-link').href = player.url || 'https://open.spotify.com';
   $('duration').textContent = time(player.duration || 0);
-  $('volume-support').textContent = ready ? `재생 기기: ${player.device || '이름 미제공'} · ${player.canVolume ? '음량 조절 지원' : volumeHelp()}` : '재생 기기 정보를 기다리고 있습니다.';
-  status(stale ? '연결 끊김 · 마지막 정보' : ready ? (player.playing ? '재생 중' : '일시정지') : client.connected ? '재생 대기' : '연결이 필요합니다.');
+  $('volume-support').textContent = ready ? t('재생 기기: {device} · {support}', getLocale(), { device: player.device || t('이름 미제공'), support: player.canVolume ? t('음량 조절 지원') : volumeHelp() }) : t('재생 기기 정보를 기다리고 있습니다.');
+  status(stale ? t('연결 끊김 · 마지막 정보') : ready ? (player.playing ? t('재생 중') : t('일시정지')) : client.connected ? t('재생 대기') : t('연결이 필요합니다.'));
   controls(); tick();
 }
 
 // 휴대폰의 시스템 음량을 웹 앱에서 직접 바꾸는 것처럼 안내하지 않습니다.
 function volumeHelp() {
-  return player.deviceType === 'smartphone' ? '이 휴대폰의 원격 음량 조절을 지원하지 않습니다. 휴대폰에서 음량을 조절해 주세요.'
-    : player.volume === null ? '현재 기기의 음량 정보가 없어 원격 음량을 조절할 수 없습니다.' : '현재 기기에서 볼륨 조절을 사용할 수 없습니다.';
+  return player.deviceType === 'smartphone' ? t('이 휴대폰의 원격 음량 조절을 지원하지 않습니다. 휴대폰에서 음량을 조절해 주세요.')
+    : player.volume === null ? t('현재 기기의 음량 정보가 없어 원격 음량을 조절할 수 없습니다.') : t('현재 기기에서 볼륨 조절을 사용할 수 없습니다.');
 }
 
 // 오래된 응답이 새 곡이나 연결 해제 상태를 덮지 못하도록 요청 번호를 확인합니다.
@@ -85,9 +88,9 @@ async function refreshPlayer() {
   } catch (error) {
     if (request !== revision) return;
     stale = true; controls();
-    status(client.connected ? '연결을 확인해 주세요.' : '로그인이 필요합니다.', error.message);
-    if (client.connected) status(error.retryAfter ? '잠시 후 다시 연결합니다.' : '연결 끊김 · 마지막 정보', error.message);
-    $('auth-message').textContent = error.message;
+    status(client.connected ? t('연결을 확인해 주세요.') : t('로그인이 필요합니다.'), t(error.message));
+    if (client.connected) status(error.retryAfter ? t('잠시 후 다시 연결합니다.') : t('연결 끊김 · 마지막 정보'), t(error.message));
+    $('auth-message').textContent = t(error.message);
     delay = error.retryAfter ? error.retryAfter * 1000 : 10000;
   } finally {
     if (request === revision && client.connected && !document.hidden && !suspended) pollTimer = setTimeout(refreshPlayer, delay);
@@ -97,13 +100,13 @@ async function refreshPlayer() {
 async function command(action, value) {
   const isVolume = action === 'volume';
   if (busy || (!isVolume && performance.now() - lastAction < 350)) return { applied: false };
-  if (stale || player.status !== 'ready') throw new Error('재생 상태를 먼저 확인해 주세요.');
+  if (stale || player.status !== 'ready') throw new Error(t('재생 상태를 먼저 확인해 주세요.'));
   const actual = action === 'toggle' ? (player.playing ? 'pause' : 'play') : action;
   if (!(isVolume ? player.canVolume : actual === 'next' ? player.canNext : actual === 'previous' ? player.canPrevious : ['play', 'pause'].includes(actual) && player.canToggle)) {
-    throw new Error('현재 기기에서는 이 동작을 사용할 수 없습니다.');
+    throw new Error(t('현재 기기에서는 이 동작을 사용할 수 없습니다.'));
   }
   if (!isVolume) lastAction = performance.now();
-  busy = true; revision++; controls(); status('변경 중');
+  busy = true; revision++; controls(); status(t('변경 중'));
   try {
     await (isVolume ? client.volume(value, player.deviceId) : client.control(actual));
     await refreshPlayer();
@@ -111,19 +114,19 @@ async function command(action, value) {
   } finally { busy = false; controls(); if (!pollTimer && client.connected && !document.hidden && !suspended) pollTimer = setTimeout(refreshPlayer, 3000); }
 }
 function operate(action) {
-  command(action).catch(error => { status('조작을 완료하지 못했습니다.', error.message); $('auth-message').textContent = error.message; });
+  command(action).catch(error => { status(t('조작을 완료하지 못했습니다.'), t(error.message)); $('auth-message').textContent = t(error.message); });
 }
 
 // 휠 한 칸은 5%이며 연속 입력을 모아 마지막 목표 볼륨을 순서대로 전송합니다.
 function adjustVolume(delta) {
   if (document.hidden) return;
-  if (!client.connected || stale || player.status !== 'ready') { status('재생 상태를 먼저 확인해 주세요.'); return; }
-  if (!player.canVolume) { const help = volumeHelp(); status(player.deviceType === 'smartphone' ? '휴대폰에서 음량 조절' : '기기 음량 조절 미지원', help); $('auth-message').textContent = help; return; }
+  if (!client.connected || stale || player.status !== 'ready') { status(t('재생 상태를 먼저 확인해 주세요.')); return; }
+  if (!player.canVolume) { const help = volumeHelp(); status(player.deviceType === 'smartphone' ? t('휴대폰에서 음량 조절') : t('기기 음량 조절 미지원'), help); $('auth-message').textContent = help; return; }
   if (volumeDevice !== player.deviceId) volumeTarget = null;
   volumeDevice = player.deviceId;
   const previous = volumeTarget ?? player.volume;
   const target = Math.max(0, Math.min(100, previous + delta));
-  if (target === previous) { if (volumeTarget === null) status(`볼륨 ${target}%`); return; }
+  if (target === previous) { if (volumeTarget === null) status(t('볼륨 {volume}%', getLocale(), { volume: target })); return; }
   volumeTarget = target;
   clearTimeout(volumeTimer); volumeTimer = setTimeout(flushVolume, 150);
 }
@@ -137,9 +140,9 @@ async function flushVolume() {
   try {
     const result = await command('volume', target);
     if (volumeTarget === target && volumeDevice === device) volumeTarget = null;
-    if (result.applied && screen === 'player' && client.connected && !stale && player.deviceId === device) status(`볼륨 ${target}%`);
+    if (result.applied && screen === 'player' && client.connected && !stale && player.deviceId === device) status(t('볼륨 {volume}%', getLocale(), { volume: target }));
   } catch (error) {
-    volumeTarget = null; status('조작을 완료하지 못했습니다.', error.message); $('auth-message').textContent = error.message;
+    volumeTarget = null; status(t('조작을 완료하지 못했습니다.'), t(error.message)); $('auth-message').textContent = t(error.message);
   } finally {
     clearTimeout(volumeTimer);
     if (volumeTarget !== null) volumeTimer = setTimeout(flushVolume, 150);
@@ -163,27 +166,27 @@ async function loadLyrics() {
   $('lyrics-lines').replaceChildren(); $('lyrics-lines').classList.remove('plain');
   $('lyrics-lines').scrollTop = 0;
   $('lyrics-empty').hidden = !$('lyrics-controls').hidden;
-  $('lyrics-title').textContent = track.title || '가사';
+  $('lyrics-title').textContent = track.title || t('가사');
   // 이전 곡의 제공처를 남기지 않고 현재 응답의 출처만 표시합니다.
-  $('lyrics-source').textContent = '가사';
-  lyricsStatus('가사를 불러오고 있습니다.');
-  if (track.status !== 'ready') { lyricsStatus('음악을 먼저 재생해 주세요.'); return; }
+  $('lyrics-source').textContent = t('가사');
+  lyricsStatus(t('가사를 불러오고 있습니다.'));
+  if (track.status !== 'ready') { lyricsStatus(t('음악을 먼저 재생해 주세요.')); return; }
   try {
-    const result = await getLyrics(track);
+    const result = await getLyrics(track, getLocale());
     if (request !== lyricRevision || track.id !== player.id) return;
-    if (!result) { lyricsStatus('이 곡의 가사가 없습니다.'); return; }
-    $('lyrics-source').textContent = '가사 · ' + result.source;
-    if (result.instrumental) { lyricsStatus('가사가 없는 연주곡입니다.'); return; }
+    if (!result) { lyricsStatus(t('이 곡의 가사가 없습니다.')); return; }
+    $('lyrics-source').textContent = t('가사 · ') + t(result.source);
+    if (result.instrumental) { lyricsStatus(t('가사가 없는 연주곡입니다.')); return; }
     lines = parseLrc(result.syncedLyrics);
     $('follow').disabled = !lines.length;
     if (!lines.length) { following = false; $('follow').checked = false; }
     const texts = lines.length ? lines.map(line => line.text) : (result.plainLyrics || '').split(/\r?\n/).filter(Boolean);
     $('lyrics-lines').classList.toggle('plain', !lines.length);
-    lyricsStatus(lines.length ? '휠로 가사를 탐색할 수 있습니다.' : texts.length ? '시간 정보가 없는 일반 가사입니다.' : '이 곡의 가사가 없습니다.');
+    lyricsStatus(lines.length ? t('휠로 가사를 탐색할 수 있습니다.') : texts.length ? t('시간 정보가 없는 일반 가사입니다.') : t('이 곡의 가사가 없습니다.'));
     const fragment = document.createDocumentFragment();
     for (const text of texts) { const row = document.createElement('p'); row.textContent = text || '♪'; fragment.append(row); }
     $('lyrics-lines').append(fragment); $('lyrics-empty').hidden = texts.length > 0 || !$('lyrics-controls').hidden; tick();
-  } catch (error) { if (request === lyricRevision) lyricsStatus(error.message); }
+  } catch (error) { if (request === lyricRevision) lyricsStatus(t(error.message)); }
 }
 function tick() {
   const progress = progressAt(stale ? { ...player, playing: false } : player, sampledAt, performance.now());
@@ -260,7 +263,7 @@ function scrollInput(direction, source) {
   const now = performance.now();
   if (lastScroll && lastScroll.source !== source && lastScroll.direction === direction && now - lastScroll.at < 40) return;
   lastScroll = { direction, source, at: now };
-  $('input-status').textContent = `휠 ${direction < 0 ? '위' : '아래'} 입력 확인 · ${++wheelCount}회`;
+  $('input-status').textContent = t('휠 {direction} 입력 확인 · {count}회', getLocale(), { direction: direction < 0 ? t('위') : t('아래'), count: ++wheelCount });
   if (screen === 'lyrics') { stopFollowing(); $('lyrics-lines').scrollTop += direction * 65; }
   else if (screen === 'settings') $('settings-view').scrollTop += direction * 65;
   else if (screen === 'player') adjustVolume(-direction * 5);
@@ -291,24 +294,41 @@ $('settings-button').onclick = () => show('settings');
 $('settings-back').onclick = () => show('player');
 $('redirect-uri').textContent = redirectUri;
 $('copy-redirect').onclick = async () => {
-  try { await navigator.clipboard.writeText(redirectUri); $('copy-message').textContent = String('복사했습니다.'); }
-  catch { $('copy-message').textContent = String('복사할 수 없습니다. 위 주소를 길게 눌러 복사해 주세요.'); }
+  try { await navigator.clipboard.writeText(redirectUri); $('copy-message').textContent = t('복사했습니다.'); }
+  catch { $('copy-message').textContent = t('복사할 수 없습니다. 위 주소를 길게 눌러 복사해 주세요.'); }
 };
-$('cover').onerror = () => { $('cover').hidden = true; $('empty-art').hidden = false; $('empty-message').textContent = '앨범아트를 불러오지 못했습니다.'; };
+$('cover').onerror = () => { $('cover').hidden = true; $('empty-art').hidden = false; $('empty-message').textContent = t('앨범아트를 불러오지 못했습니다.'); };
+const modeInputs = [...document.querySelectorAll('input[name="device-mode"]')];
+for (const input of modeInputs) {
+  input.checked = input.value === getSessionMode();
+  input.onchange = async () => {
+    $('connect').disabled = true;
+    try {
+      // Disconnect before changing policy; never promote a temporary login to persistent storage.
+      await client.disconnect();
+      await setSessionMode(input.value);
+      player = normalizePlayer(null); stale = false; revision++; clearTimeout(pollTimer); render();
+      $('disconnect').hidden = true;
+      $('auth-message').textContent = t('기기 설정을 변경했습니다. 다시 로그인해 주세요.');
+    } catch (error) { $('auth-message').textContent = t(error.message); }
+    finally { for (const radio of modeInputs) radio.checked = radio.value === getSessionMode(); $('connect').disabled = false; }
+  };
+}
 $('connect-form').onsubmit = async event => {
   event.preventDefault(); $('connect').disabled = true;
   try {
     const id = $('client-id').value.trim();
     if (!/^[a-f\d]{32}$/i.test(id)) { $('client-id').focus(); throw new Error('Client ID 32자리를 입력해 주세요.'); }
     // Public app identifier only; session tokens use the existing device store.
-    try { localStorage.setItem('r1_spotify_personal_client_id', id); } catch { /* Login can continue without preference storage. */ }
+    const preferenceStore = getSessionMode() === 'shared' ? sessionStorage : localStorage;
+    try { preferenceStore.setItem('r1_spotify_personal_client_id', id); } catch { /* Login can continue without preference storage. */ }
     location.assign(await client.authorize(id));
-  } catch (error) { $('auth-message').textContent = error.message; $('connect').disabled = false; }
+  } catch (error) { $('auth-message').textContent = t(error.message); $('connect').disabled = false; }
 };
 $('disconnect').onclick = async () => {
   revision++; lyricRevision++; clearTimeout(pollTimer);
-  try { await client.disconnect(); player = normalizePlayer(null); stale = false; lines = []; render(); $('disconnect').hidden = true; $('auth-message').textContent = '이 기기의 연결이 해제되었습니다.'; }
-  catch { $('auth-message').textContent = '저장소 접근에 실패했습니다. 다시 시도해 주세요.'; }
+  try { await client.disconnect(); player = normalizePlayer(null); stale = false; lines = []; render(); $('disconnect').hidden = true; $('auth-message').textContent = t('이 기기의 연결이 해제되었습니다.'); }
+  catch { $('auth-message').textContent = t('저장소 접근에 실패했습니다. 다시 시도해 주세요.'); }
 };
 // 앱을 떠날 때 대기 입력과 이전 응답을 무효화하여 숨겨진 화면의 갱신을 중단합니다.
 function suspend() {
@@ -328,6 +348,7 @@ function recoverViewport(attempt = 0) {
 
 // 여러 복귀 신호를 하나로 모으고 중단되거나 실패한 가사 조회만 다시 시작합니다.
 function resume() {
+  updateLocale();
   if (document.hidden) return;
   suspended = false; recoverViewport();
   clearTimeout(resumeTimer);
@@ -341,18 +362,27 @@ function resume() {
 }
 document.addEventListener('visibilitychange', () => document.hidden ? suspend() : resume());
 window.addEventListener('pagehide', suspend);
+window.addEventListener('pagehide', () => {
+  if (getSessionMode() === 'shared' && client.connected) {
+    // Also clear sessions restored from the browser's back/forward cache.
+    client.disconnect().catch(() => {});
+  }
+});
 window.addEventListener('pageshow', resume);
+window.addEventListener('pageshow', () => {
+  if (startupReady && getSessionMode() === 'shared' && !client.connected) { render(); show('settings'); }
+});
 window.addEventListener('focus', resume);
 
 // 지원되는 브라우저에서만 현재 UI와 동일한 재생 명령을 도구로 제공합니다.
 if (document.modelContext?.registerTool) {
   const lifecycle = new AbortController();
   try {
-    Promise.resolve(document.modelContext.registerTool({ name: 'control_spotify_playback', title: 'Spotify 재생 제어',
-      description: '이 기기에 연결된 Spotify의 현재 재생을 변경합니다.',
+    Promise.resolve(document.modelContext.registerTool({ name: 'control_spotify_playback', title: t('Spotify 재생 제어'),
+      description: t('이 기기에 연결된 Spotify의 현재 재생을 변경합니다.'),
       inputSchema: { type: 'object', properties: { action: { type: 'string', enum: ['toggle', 'next', 'previous'] } }, required: ['action'], additionalProperties: false },
       annotations: { readOnlyHint: false },
-      execute(input) { if (!input || Object.keys(input).length !== 1 || !['toggle', 'next', 'previous'].includes(input.action)) throw new Error('유효한 재생 동작이 필요합니다.'); return command(input.action); },
+      execute(input) { if (!input || Object.keys(input).length !== 1 || !['toggle', 'next', 'previous'].includes(input.action)) throw new Error(t('유효한 재생 동작이 필요합니다.')); return command(input.action); },
     }, { signal: lifecycle.signal })).catch(() => {});
   } catch { /* 미지원 환경에서는 화면과 물리 버튼을 그대로 사용합니다. */ }
   window.addEventListener('pagehide', () => lifecycle.abort(), { once: true });
@@ -363,26 +393,40 @@ async function start() {
   try {
     // Client ID는 공개 앱 식별자이며 로그인 토큰이나 Client Secret을 포함하지 않습니다.
     let savedId = '';
-    try { savedId = localStorage.getItem('r1_spotify_personal_client_id') || localStorage.getItem('r1_spotify_client_id') || ''; } catch {}
+    try { savedId = getSessionMode() === 'shared' ? sessionStorage.getItem('r1_spotify_personal_client_id') || '' : localStorage.getItem('r1_spotify_personal_client_id') || localStorage.getItem('r1_spotify_client_id') || ''; } catch {}
     // The retired shared ID is recognized only to migrate old installations; never used as a default.
     const retiredSharedId = '3cd6c3a652e44ba0b3f685d4a506a0b8';
     $('client-id').value = /^[a-f\d]{32}$/i.test(savedId) && savedId !== retiredSharedId ? savedId : '';
     await client.init(); await client.finish(returned);
     if (client.tokens?.clientId === retiredSharedId) {
       await client.disconnect();
-      $('auth-message').textContent = String('이전 공용 연결을 해제했습니다. 본인 앱의 Client ID를 입력해 다시 연결해 주세요.');
+      $('auth-message').textContent = t('이전 공용 연결을 해제했습니다. 본인 앱의 Client ID를 입력해 다시 연결해 주세요.');
     }
     if (client.connected && client.tokens?.clientId) $('client-id').value = client.tokens.clientId;
     $('setup-guide').open = !$('client-id').value;
     startupReady = true;
-    $('storage-status').textContent = client.connected ? client.storage.notice : '로그인 정보를 복원하지 못했습니다. 기기 저장소와 연결 상태를 확인해 주세요.';
+    $('storage-status').textContent = client.connected ? t(client.storage.notice) : t('로그인 정보를 복원하지 못했습니다. 기기 저장소와 연결 상태를 확인해 주세요.');
     render(); await refreshPlayer();
     if (!client.connected) show('settings');
     if (!client.connected && client.authorizationPending) {
       show('settings');
-      $('auth-message').textContent = 'Spotify 로그인 완료를 아직 확인하지 못했습니다. 로그인을 다시 누른 뒤 앱으로 자동 돌아올 때까지 기다려 주세요.';
+      $('auth-message').textContent = t('Spotify 로그인 완료를 아직 확인하지 못했습니다. 로그인을 다시 누른 뒤 앱으로 자동 돌아올 때까지 기다려 주세요.');
     }
-  } catch (error) { render(); show('settings'); $('auth-message').textContent = error.message; }
+  } catch (error) { render(); show('settings'); $('auth-message').textContent = t(error.message); }
 }
+let displayedLocale = getLocale();
+function updateLocale() {
+  const locale = getLocale();
+  if (locale === displayedLocale) return;
+  displayedLocale = locale;
+  applyStaticLocale(locale);
+  render(); fitViewport();
+  $('storage-status').textContent = t(client.storage.notice);
+  $('auth-message').textContent = '';
+  if (screen === 'lyrics') loadLyrics();
+}
+window.addEventListener('languagechange', updateLocale);
+window.addEventListener('focus', updateLocale);
+window.addEventListener('pageshow', updateLocale);
 setInterval(() => { if (!document.hidden) tick(); }, 200);
 start();
