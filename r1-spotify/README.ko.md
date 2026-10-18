@@ -4,17 +4,17 @@
 
 ![R1 Spotify — 손안의 음악 리모컨](docs/assets/hero-ko.svg)
 
-<p align="center"><img alt="Platform: rabbit r1" src="https://img.shields.io/badge/platform-rabbit_r1-ff6333?style=flat-square" /> <img alt="Auth: OAuth PKCE" src="https://img.shields.io/badge/auth-OAuth_PKCE-a4ffba?style=flat-square" /> <img alt="Runtime: JavaScript and Worker" src="https://img.shields.io/badge/runtime-JavaScript_%2B_Worker-24392e?style=flat-square" /></p>
+<p align="center"><img alt="Platform: rabbit r1" src="https://img.shields.io/badge/platform-rabbit_r1-ff6333?style=flat-square" /> <img alt="Auth: OAuth PKCE" src="https://img.shields.io/badge/auth-OAuth_PKCE-a4ffba?style=flat-square" /> <img alt="Runtime: JavaScript and Worker" src="https://img.shields.io/badge/runtime-JavaScript_%2B_Worker-24392e?style=flat-square" /> <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-a4ffba?style=flat-square" /></a></p>
 
 # R1 Spotify
 
-**rabbit r1을 위한 손안의 Spotify 리모컨. 물리 조작부터 가사까지 한 화면에서.**
+**누구나 설치하고 수정할 수 있는 rabbit r1용 오픈소스 Spotify 리모컨.**
 
 앨범아트·곡명·아티스트·앨범·재생 시간을 확인하고, 스와이프로 곡을 넘기고, 옆 버튼으로 일시정지하고, 휠로 볼륨을 바꿉니다. 별도 PC 없이 r1에서 Creation이 실행되며, 음악은 같은 Spotify 계정의 휴대폰·컴퓨터·스피커에서 계속 재생됩니다.
 
 [시작하기](#시작하기) · [조작 가이드](#조작-가이드) · [직접 배포](#직접-배포) · [개인정보](#개인정보와-인증) · [문제 해결](#문제-해결) · [검증](#검증)
 
-> 커뮤니티 프로젝트입니다. 재생 제어에는 Spotify Premium과 활성 재생 기기가 필요합니다. 사이트 접근 권한과 Spotify 앱 사용 권한은 각각 충족해야 하며, 현재 불특정 다수에게 제공되는 상용 서비스로 확인된 상태는 아닙니다.
+> MIT 라이선스로 공개하는 직접 배포형 프로젝트입니다. 저장소를 포크하거나 복제한 뒤 본인 서버와 Spotify 앱으로 사용할 수 있습니다. 재생 제어에는 Spotify Premium과 활성 재생 기기가 필요합니다.
 
 ## 작은 화면에 맞춘 경험
 
@@ -35,17 +35,45 @@
 
 ## 시작하기
 
-1. rabbit Creation에서 [기존 배포 사이트](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/)를 엽니다. 기존 기록상 비공개 사이트로 소유자 ChatGPT 로그인이 필요했습니다. 이번 문서 작업에서 현재 공유 설정은 확인하지 않았습니다.
-2. 기본 Client ID를 쓴다면 앱 소유자에게 Spotify 계정 허용 목록 등록을 요청합니다. 본인 앱을 쓰려면 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)에서 Web API 앱을 등록합니다.
-3. 본인 앱에 연결 설정이 표시하는 Redirect URI를 정확히 등록합니다. 기존 사이트 주소는 다음과 같습니다.
+이 저장소 링크를 공유하면 다른 사람도 소스를 받아 자신의 환경에 설치할 수 있습니다. **각자 배포 주소와 Spotify Client ID를 준비하는 방식**이며, 저장소 소유자의 사이트·ChatGPT 계정·Spotify 앱 초대에 의존하지 않습니다.
 
-   `https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/`
+### 준비물
 
-   끝의 슬래시도 포함합니다. 연결 설정에 본인의 **Client ID**를 입력합니다. Client Secret은 사용하지 않습니다.
-4. Spotify에 로그인하고 재생 상태 읽기·제어 권한에 동의합니다.
-5. 같은 계정의 휴대폰·컴퓨터·스피커에서 곡을 재생하면 r1에 현재 곡이 표시됩니다.
+- rabbit r1과 Creation URL을 등록할 수 있는 환경
+- Spotify Premium 계정, 같은 계정으로 재생 중인 휴대폰·컴퓨터·스피커
+- Git, Node.js 24 및 npm
+- HTTPS 호스팅 계정: 아래 예시는 Cloudflare Workers 사용
+- 본인 계정으로 등록한 Spotify Web API 앱
 
-[Creation 설치 정보](docs/install-creation.json)와 [설치 QR](docs/install-qr.png)은 기존 배포 주소용입니다. 직접 배포할 때는 URL을 바꾸고 QR도 새로 생성합니다.
+### 1. 소스 받기
+
+직접 수정하고 기여하려면 먼저 GitHub에서 **Fork**합니다. 설치만 하려면 바로 복제합니다.
+
+```powershell
+git clone https://github.com/plutoparty1/Rabbit_R1.git
+cd Rabbit_R1/r1-spotify
+node scripts/build.mjs
+```
+
+### 2. 본인 HTTPS 주소에 배포하기
+
+[직접 배포](#직접-배포)의 명령으로 Worker를 배포하고 발급된 HTTPS 주소를 기록합니다. 예: `https://r1-spotify.<your-subdomain>.workers.dev/`. 본인 배포에는 저장소 소유자의 ChatGPT 로그인이 필요하지 않습니다.
+
+### 3. 본인 Spotify 앱 연결하기
+
+1. [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)에서 본인 Web API 앱을 만듭니다.
+2. 앱 설정의 Redirect URI에 **자신의 배포 주소**를 등록합니다. 앱의 연결 설정에 표시되는 주소와 끝의 `/`까지 정확히 맞춥니다.
+3. 배포한 앱의 점 세 개 → 연결 설정에서 본인의 **Client ID**를 입력합니다. 기존 값이 보이면 본인 값으로 바꿉니다. Client Secret은 사용하지 않습니다.
+4. 본인의 Spotify 계정을 앱의 사용자 허용 목록에 등록하고 로그인합니다.
+
+### 4. rabbit Creation에 추가하기
+
+1. [설치 정보 템플릿](docs/install-creation.example.json)을 복사하고 `url`을 자신의 HTTPS 주소로 바꿉니다.
+2. rabbit Creation의 실행 URL로 같은 주소를 등록합니다. QR로 설치 정보를 배포한다면 자신의 주소로 새로 생성합니다.
+3. r1에서 열고 Spotify 로그인·재생 읽기/제어에 동의합니다.
+4. 같은 계정의 다른 기기에서 곡을 재생하고 r1에서 곡 정보·재생 제어·가사를 확인합니다.
+
+설치가 끝나면 별도 PC 없이 r1에서 사용할 수 있습니다. GitHub Pages처럼 정적 파일만 제공하는 배포는 벅스 조회 서버를 포함하지 않습니다. 전체 기능은 Worker를 포함해 배포합니다.
 
 ## 조작 가이드
 
@@ -77,35 +105,32 @@
 
 ## 직접 배포
 
-ES 모듈과 내장 테스트 러너를 지원하는 최신 Node.js를 사용합니다. 패키지 설치는 필요 없으며 저장소에 최소 Node 버전은 선언되어 있지 않습니다. 이번 문서 검증 환경은 Node.js 24입니다.
+프런트엔드와 서버는 별도 애플리케이션 패키지 설치 없이 빌드됩니다. 배포 도구 Wrangler는 `npx`로 실행할 때 내려받습니다. 아래 명령은 `r1-spotify` 폴더에서 실행합니다.
 
 ```powershell
-git clone https://github.com/plutoparty1/Rabbit_R1.git
-cd Rabbit_R1/r1-spotify
 node scripts/build.mjs
+npx wrangler login
+npx wrangler deploy --config wrangler.example.jsonc
 ```
 
-Cloudflare Workers 등 호환되는 모듈 Worker 런타임에 `dist/server/index.js`를 진입점으로 배포하고 `bugs.mjs`·`assets.mjs`를 함께 포함합니다. 계정별 배포 설정과 자동 게시 명령은 저장소에 포함되어 있지 않습니다.
+[Wrangler 설정 예제](wrangler.example.jsonc)는 생성된 `dist/server/index.js`를 진입점으로 사용하며 빌드를 배포 전에 실행합니다. 필요하면 `name`을 변경합니다. 배포 계정은 본인 Cloudflare 계정을 사용합니다. CLI가 출력한 HTTPS 주소를 Spotify Redirect URI와 rabbit Creation URL에 등록합니다. 설정 항목은 [Cloudflare 공식 문서](https://developers.cloudflare.com/workers/wrangler/configuration/)를 참고합니다.
 
-빌드는 기존 `dist` UI를 Worker에 포함하므로 화면 수정 후 다시 실행해야 합니다. `dist`만 정적 호스팅하면 `/api/lyrics/bugs`는 제공되지 않습니다.
+로컬에서 화면과 서버를 함께 확인하려면:
 
-배포 후 다음 항목을 맞춥니다.
+```powershell
+node scripts/build.mjs
+npx wrangler dev --config wrangler.example.jsonc --port 8791
+```
 
-- 본인 Spotify 앱의 Redirect URI에 새 HTTPS 주소를 정확히 등록하고 연결 설정에 본인 Client ID를 입력합니다.
-- `docs/install-creation.json`과 rabbit Creation URL을 변경하고 QR을 새로 생성합니다.
-- 대상 사용자의 r1에서 사이트 접근·OAuth·재생·가사·재접속을 확인합니다. 출처가 달라지면 다시 로그인해야 합니다.
+이 주소는 개발용입니다. r1 설치와 실제 Spotify 로그인은 위에서 배포한 HTTPS 주소로 진행합니다. 프런트엔드를 수정한 뒤에는 다시 빌드합니다. 빌드는 기존 `dist` UI와 `bugs.mjs`·`assets.mjs`를 Worker로 묶습니다. 다른 호스팅을 쓰려면 같은 모듈 Worker 인터페이스와 `/api/lyrics/bugs` 경로를 지원해야 합니다.
 
-### 공유와 공개 배포 조건
+### 저장소를 공유하는 방법
 
-| 사용 방식 | 필요한 조건 |
-| --- | --- |
-| 기존 사이트 + 기본 Client ID | 사이트 접근 권한과 앱 소유자의 Spotify 허용 목록 등록 |
-| 기존 사이트 + 본인 Client ID | 사이트 접근 권한과 본인 Spotify 앱의 기존 URL 등록 |
-| 본인 사이트 + 본인 Client ID | 호환 HTTPS 호스팅·본인 앱 등록·Creation URL 갱신 |
+- **설치 안내:** 이 GitHub 저장소 링크와 README를 공유합니다. 받는 사람은 자신의 Spotify 앱과 배포 주소를 사용합니다.
+- **수정본 공유:** 포크한 저장소를 공유하고 MIT 저작권·라이선스 고지를 유지합니다.
+- **하나의 서버를 함께 사용:** 호스팅 접근 권한과 Spotify 앱 사용자 등록은 해당 운영자가 관리합니다. 각자 설치하는 기본 절차와는 별도 운영 방식입니다.
 
-2026-10-18 확인한 Spotify 개발자 모드 정책에 따르면 앱 소유자는 Premium이어야 하며 인증 사용자는 최대 5명이고 허용 목록 등록이 필요합니다. 등록되지 않은 계정은 로그인에 성공해도 API가 403을 반환할 수 있습니다. 더 넓은 배포에는 Spotify의 확장 할당량 승인이 필요하며, 사이트 공개만으로 제한이 해제되지는 않습니다. 최신 신청 요건은 [공식 할당량 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)을 확인합니다.
-
-기본 Client ID의 실제 모드·허용 목록·잔여 자리는 소스에서 알 수 없습니다. 공개 출시 전 사이트 공유 범위, Spotify 자격 요건, 가사 제공처 이용 조건, 운영 모니터링과 실기 호환성을 확인해야 합니다. 현재 체크아웃에 라이선스 파일이 없으므로 이 README가 상업적 재배포 권한을 부여하지는 않습니다.
+Spotify의 개발자 모드 제한은 **각 Spotify 앱**에 적용됩니다. 저장소를 포크하거나 소스를 다운로드할 수 있는 인원 제한이 아닙니다. 2026-10-18 확인 기준 앱 소유자는 Premium이어야 하며 앱당 인증 사용자는 최대 5명이고 허용 목록 등록이 필요합니다. 하나의 Client ID로 더 많은 사용자에게 제공하려면 별도의 확장 할당량 승인이 필요합니다. 최신 조건은 [Spotify 공식 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)을 확인합니다.
 
 ## 개인정보와 인증
 
@@ -125,7 +150,7 @@ IndexedDB는 브라우저 저장소이며 하드웨어 암호화 저장소가 �
 
 | 증상 | 확인 사항 |
 | --- | --- |
-| 사이트에서 ChatGPT 로그인 요구 | 소유자에게 사이트 공유 권한 확인 또는 직접 배포 |
+| 예전 링크에서 ChatGPT 로그인 요구 | Creation 실행 URL을 본인이 배포한 Worker 주소로 변경 |
 | OAuth Redirect 오류 | Dashboard의 HTTPS 주소와 끝 슬래시까지 일치하는지 확인 |
 | 로그인 후 제어가 403 | 허용 목록·Premium·재생 기기 제한 확인 |
 | 현재 곡 없음 | 같은 계정의 다른 기기에서 Spotify 재생 시작 |
@@ -147,6 +172,8 @@ r1-spotify/
 ├── scripts/build.mjs     UI 포함 및 dist/server/ 생성
 ├── tests/                Node 테스트·Playwright 콜백 시나리오
 ├── docs/                 설치·화면·검증 기록·SVG
+├── wrangler.example.jsonc 배포 설정 예제
+├── LICENSE               r1-spotify MIT 라이선스
 └── DESIGN.md             UI 설계 기록
 ```
 
@@ -168,9 +195,20 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261008-r13`이며 실제 배포 버전은 이번에 확인하지 않았습니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261008-r13`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
-## 기여와 참고 자료
+## 라이선스
+
+이 `r1-spotify/` 프로젝트의 코드와 직접 제작한 문서·SVG는 [MIT 라이선스](LICENSE)로 공개합니다. 사용·수정·복제·재배포·상업적 이용이 가능하며 저작권 및 라이선스 고지를 유지해야 합니다. 이 라이선스는 다른 하위 프로젝트에 적용되지 않습니다. 외부 서비스·상표·앨범아트·가사 등 제3자 콘텐츠의 권리는 각 소유자에게 있으며 MIT 허용 범위에 포함되지 않습니다.
+
+## 기여하기
+
+1. 저장소를 포크하고 작업 브랜치를 만듭니다.
+2. 프런트엔드는 `dist/`, 서버는 `server/`에서 수정합니다.
+3. 빌드와 관련 테스트를 실행하고 변경된 동작을 확인합니다.
+4. 한국어·영어 문서를 함께 갱신하고 Pull Request에 변경 내용과 검증 결과를 적습니다.
+
+## 문의와 참고 자료
 
 [GitHub Issues](https://github.com/plutoparty1/Rabbit_R1/issues)에 표시 버전·기기/WebView·화면 크기·재생 기기·재현 단계·인증값을 제거한 진단 정보를 남겨 주세요. 문서를 수정할 때 한국어·영어 내용을 함께 맞추고 모의 화면과 실기 결과를 구분합니다.
 

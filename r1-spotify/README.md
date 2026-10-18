@@ -4,17 +4,17 @@
 
 ![R1 Spotify — your music, a little closer](docs/assets/hero.svg)
 
-<p align="center"><img alt="Platform: rabbit r1" src="https://img.shields.io/badge/platform-rabbit_r1-ff6333?style=flat-square" /> <img alt="Auth: OAuth PKCE" src="https://img.shields.io/badge/auth-OAuth_PKCE-a4ffba?style=flat-square" /> <img alt="Runtime: JavaScript and Worker" src="https://img.shields.io/badge/runtime-JavaScript_%2B_Worker-24392e?style=flat-square" /></p>
+<p align="center"><img alt="Platform: rabbit r1" src="https://img.shields.io/badge/platform-rabbit_r1-ff6333?style=flat-square" /> <img alt="Auth: OAuth PKCE" src="https://img.shields.io/badge/auth-OAuth_PKCE-a4ffba?style=flat-square" /> <img alt="Runtime: JavaScript and Worker" src="https://img.shields.io/badge/runtime-JavaScript_%2B_Worker-24392e?style=flat-square" /> <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-a4ffba?style=flat-square" /></a></p>
 
 # R1 Spotify
 
-**A pocket-sized Spotify remote for rabbit r1 — with hardware controls and lyrics.**
+**An open-source Spotify remote for rabbit r1. Build it, host it, make it yours.**
 
 See the artwork, track, artist, album and playback progress. Swipe to skip, press the side button to pause, and turn the wheel for volume. The Creation runs on r1 without a companion PC; audio continues on the active phone, computer or speaker signed in to the same Spotify account.
 
 [Get started](#get-started) · [Controls](#controls) · [Self-host](#self-host) · [Privacy](#privacy-and-authentication) · [Troubleshooting](#troubleshooting) · [Verification](#verification)
 
-> Community project. Playback control requires Spotify Premium and an active playback device. Access to the hosted site and permission to use its Spotify app are separate requirements. Public production availability is not established.
+> MIT-licensed and self-hostable. Fork or clone this repository, deploy your own instance, and connect your own Spotify app. Playback control requires Spotify Premium and an active playback device.
 
 ## Built for a small screen
 
@@ -35,17 +35,45 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Get started
 
-1. Open the [existing deployment](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/) through your rabbit Creation. Its historical access setting was private and required the owner's ChatGPT login; current sharing settings have not been checked for this documentation update.
-2. Ask the Spotify app owner to allowlist your account, or create your own Web API app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-3. For your own app, register the exact redirect URI shown by connection settings. For the existing deployment it is:
+Share this repository so others can install their own copy. **Each installer uses their own deployment URL and Spotify Client ID.** Installation does not depend on the repository owner's hosted site, ChatGPT account or Spotify app invitation.
 
-   `https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/`
+### Prerequisites
 
-   Keep the trailing slash. Enter your **Client ID** in connection settings. A Client Secret is neither needed nor used.
-4. Complete Spotify login and grant playback read/control access.
-5. Start a track on a phone, computer or speaker using the same account. The r1 screen will show the active track.
+- A rabbit r1 and access to register a Creation URL
+- Spotify Premium, with an active phone, computer or speaker on the same account
+- Git, Node.js 24 and npm
+- HTTPS hosting: the example below uses Cloudflare Workers
+- A Spotify Web API app registered under your own account
 
-The [Creation configuration](docs/install-creation.json) and [installation QR](docs/install-qr.png) point to the existing deployment. Change the URL and regenerate the QR for a self-hosted instance.
+### 1. Get the source
+
+To customize and contribute, **Fork** the repository first. To install, clone it directly:
+
+```powershell
+git clone https://github.com/plutoparty1/Rabbit_R1.git
+cd Rabbit_R1/r1-spotify
+node scripts/build.mjs
+```
+
+### 2. Deploy your HTTPS instance
+
+Follow [Self-host](#self-host) to deploy the Worker and record its HTTPS URL, for example `https://r1-spotify.<your-subdomain>.workers.dev/`. Your deployment does not require the repository owner's ChatGPT login.
+
+### 3. Connect your Spotify app
+
+1. Create your own Web API app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
+2. Register **your deployment URL** as its Redirect URI. Match the address shown in connection settings exactly, including the trailing `/`.
+3. Open your deployed app → three-dot menu → connection settings and enter your **Client ID**. Replace any prefilled value with your own. No Client Secret is used.
+4. Add your Spotify account to your app's user allowlist and sign in.
+
+### 4. Add it to rabbit Creation
+
+1. Copy the [installation template](docs/install-creation.example.json) and replace `url` with your HTTPS address.
+2. Register that address as your rabbit Creation launch URL. Generate a new QR using your address if you distribute installation details by QR.
+3. Open it on r1, sign in and grant playback read/control permissions.
+4. Start a track on another device with the same account. Verify track information, controls and lyrics on r1.
+
+Once installed, no companion PC is needed. Static-only hosting such as GitHub Pages does not include the Bugs lookup server; deploy the Worker for the full feature set.
 
 ## Controls
 
@@ -77,35 +105,32 @@ Bugs server lookup has a 20-second budget; the browser waits up to 25 seconds. S
 
 ## Self-host
 
-Use a modern Node.js runtime with ES modules and the built-in test runner. No package installation is required; the repository does not declare a minimum Node version. This documentation was checked with Node.js 24.
+The frontend and server build without application package installation. `npx` downloads Wrangler when needed. Run these commands from `r1-spotify`:
 
 ```powershell
-git clone https://github.com/plutoparty1/Rabbit_R1.git
-cd Rabbit_R1/r1-spotify
 node scripts/build.mjs
+npx wrangler login
+npx wrangler deploy --config wrangler.example.jsonc
 ```
 
-Deploy `dist/server/index.js` as the entry point, with `bugs.mjs` and `assets.mjs` beside it, to Cloudflare Workers or a compatible module Worker runtime. The repository does not include account-specific deployment configuration or a one-command publish script.
+The [Wrangler example](wrangler.example.jsonc) uses the generated `dist/server/index.js` entry point and runs the build before deployment. Change `name` if desired and deploy through your own Cloudflare account. Register the HTTPS URL printed by the CLI in Spotify and rabbit Creation. See the [Cloudflare configuration reference](https://developers.cloudflare.com/workers/wrangler/configuration/) for configuration details.
 
-The build embeds the existing `dist` UI into the Worker; rebuild after editing frontend files. Static hosting of `dist` alone does not provide `/api/lyrics/bugs`.
+To preview the frontend and server locally:
 
-After deployment:
+```powershell
+node scripts/build.mjs
+npx wrangler dev --config wrangler.example.jsonc --port 8791
+```
 
-- Register your exact HTTPS URL in your Spotify app and enter your own Client ID in connection settings.
-- Update `docs/install-creation.json` and your rabbit Creation URL; generate a new installation QR.
-- Verify site access, OAuth, playback, lyrics and reconnect on each target user's r1. A changed origin requires a new login.
+The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI with `bugs.mjs` and `assets.mjs` into the Worker. Other hosting must support the same module Worker interface and `/api/lyrics/bugs` route.
 
-### Sharing and release readiness
+### Sharing the project
 
-| Option | Requirements |
-| --- | --- |
-| Existing site + default Client ID | Site access and inclusion in the app owner's Spotify allowlist |
-| Existing site + your Client ID | Site access and the existing URL registered in your own Spotify app |
-| Your deployment + your Client ID | Compatible HTTPS hosting, your app registration and an updated Creation URL |
+- **Help others install:** Share this GitHub repository and README. Each installer uses their own Spotify app and deployment URL.
+- **Share your modifications:** Publish your fork and retain the MIT copyright and license notice.
+- **Operate a shared instance:** Its operator manages hosting access and Spotify app users separately from the default self-host installation flow.
 
-As checked on 2026-10-18, Spotify development mode requires a Premium app owner, allows up to five authenticated users and requires allowlisting. Login can succeed while API requests return 403 for an unlisted user. Wider distribution requires Spotify's extended quota approval; publishing the site does not remove that gate. See the [official quota-mode policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) for current eligibility.
-
-The default Client ID's actual quota mode, allowlist and capacity cannot be determined from source. Before a public release, verify site audience, Spotify eligibility, lyric-provider terms, operational monitoring and hardware compatibility. No license file is present in this checkout, so commercial redistribution permission is not established by this README.
+Spotify development-mode limits apply to **each Spotify app**, not to how many people may fork or download the source. As checked on 2026-10-18, the app owner needs Premium and each app supports up to five authenticated, allowlisted users. Serving a larger audience with one Client ID requires separate extended quota approval. Check the [official Spotify policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) for current conditions.
 
 ## Privacy and authentication
 
@@ -125,7 +150,7 @@ Disconnect removes saved credentials and records a logout marker to block restor
 
 | Symptom | Check or action |
 | --- | --- |
-| Site asks for ChatGPT login | Check site sharing/access with the owner, or self-host |
+| An old link asks for ChatGPT login | Use your own Worker deployment URL registered in your Creation |
 | OAuth redirect error | Match the exact HTTPS URI, including trailing slash, in the Dashboard |
 | Login succeeds; controls return 403 | Check the allowlist, Premium account and playback-device restrictions |
 | No current track | Start Spotify playback on another device with the same account |
@@ -147,6 +172,8 @@ r1-spotify/
 ├── scripts/build.mjs     Embeds UI and generates dist/server/
 ├── tests/                Node tests and Playwright callback scenarios
 ├── docs/                 Installation, screenshots, evidence and SVG assets
+├── wrangler.example.jsonc Deployment configuration example
+├── LICENSE               MIT license for r1-spotify
 └── DESIGN.md             UI design notes
 ```
 
@@ -168,9 +195,20 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261008-r13`; the hosted version has not been verified here. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261008-r13`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
-## Contributing and references
+## License
+
+Code and original documentation/SVG assets in `r1-spotify/` are available under the [MIT license](LICENSE). You may use, modify, copy, redistribute and use them commercially while retaining the copyright and license notice. This license does not apply to sibling projects. Third-party services, trademarks, album art and lyrics remain subject to their owners' rights and are not covered by this MIT grant.
+
+## Contributing
+
+1. Fork the repository and create a working branch.
+2. Edit the frontend in `dist/` and server code in `server/`.
+3. Run the build and relevant tests, and verify the changed behavior.
+4. Update English and Korean docs together; open a pull request describing the change and validation.
+
+## Support and references
 
 Report problems in [GitHub Issues](https://github.com/plutoparty1/Rabbit_R1/issues) with the displayed version, device/WebView, viewport, playback device, reproduction steps and redacted diagnostics. Keep documentation changes aligned across English and Korean; label mock captures and separate hardware reports from automated checks.
 
