@@ -29,9 +29,9 @@
 
 ## 화면 미리보기
 
-<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/previews/siol-night-player-ko.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/previews/siol-night-lyrics-ko.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/previews/siol-night-controls-ko.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
+<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/previews/siol-night-player-real-ko.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/previews/siol-night-lyrics-real-ko.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/previews/siol-night-controls-real-ko.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
 
-시올의 **밤을 노래하자**(앨범 **왜곡된 시선**)를 사용한 한국어 UI 미리보기입니다. 곡 정보·앨범아트 출처: [벅스](https://music.bugs.co.kr/track/32794635). 재생은 모의 응답이며 가사 화면에는 레이아웃 설명용 예시 문장을 사용했습니다. 실제 앱에서는 제공처가 반환한 원문 전체를 표시하고 끝까지 스크롤할 수 있습니다.
+시올의 **밤을 노래하자**(앨범 **왜곡된 시선**) 한국어 UI 미리보기입니다. 곡 정보·앨범아트·가사 출처: [벅스](https://music.bugs.co.kr/track/32794635). 재생 상태만 모의 처리했으며 가사 화면은 공개 제공처의 실제 응답에서 짧게 발췌했습니다. 실제 앱은 반환된 가사 전체를 스크롤로 표시합니다.
 
 ## 시작하기
 
@@ -136,15 +136,9 @@ Spotify 개발자 모드의 인증 사용자·요청 제한은 **각 사용자�
 
 벅스 서버 조회는 전체 20초, 브라우저 대기는 25초로 제한합니다. 성공 응답은 기기에서 5분간 재사용할 수 있습니다. 제공처의 수록 범위·응답·공개 페이지 구조가 바뀌면 조회가 실패할 수 있습니다.
 
-## 프로젝트 전용 Cloudflare 호스팅
+## 호스팅 운영
 
-**이전 준비 완료, 실제 이전 대기 중입니다.** 프로젝트 전용 Cloudflare 계정이 아직 생성되지 않아 현재 실행 주소는 기존 Sites 주소를 유지합니다. 일반 사용자의 Client ID 설정과 운영자의 호스팅 설정은 별개입니다.
-
-1. 운영자가 프로젝트 전용 Cloudflare 계정을 만들고 이메일 인증을 완료합니다.
-2. 아래 직접 배포 명령으로 해당 계정에 로그인·배포하거나, GitHub 저장소 Settings → Secrets and variables → Actions에 전용 계정의 `CLOUDFLARE_ACCOUNT_ID`와 `CLOUDFLARE_API_TOKEN`을 등록합니다. 토큰은 전용 계정의 Workers 편집 권한으로 한정하고 소스나 채팅에 넣지 않습니다.
-3. GitHub Actions의 **Deploy R1 Spotify to Cloudflare → Run workflow**를 실행합니다. [배포 워크플로](../.github/workflows/r1-spotify-cloudflare.yml)는 수동 실행 방식입니다.
-4. 실제 발급된 HTTPS 주소로 앱 접근·가사·개인/공용 로그인 모드를 확인합니다. 각 사용자는 자신의 Spotify 앱에 새 주소를 Redirect URI로 추가해야 합니다.
-5. [Creation 설치 정보](docs/install-creation.json), README의 실행·Redirect 주소, QR을 새 주소로 갱신한 뒤 기존 Sites 주소 사용을 종료합니다. 새 주소는 다른 출처이므로 기존 로그인은 옮겨지지 않습니다.
+공용 실행 앱은 기존 Sites 호스팅을 유지합니다. Cloudflare로 이전하지 않습니다. 아래 직접 배포 안내는 포크를 독립 운영하는 개발자용 선택 사항입니다.
 
 ## 직접 배포
 
@@ -254,11 +248,15 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261018-r18`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261018-r19`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
 ## 라이선스
 
 이 `r1-spotify/` 프로젝트의 코드와 직접 제작한 문서·SVG는 [MIT 라이선스](LICENSE)로 공개합니다. 사용·수정·복제·재배포·상업적 이용이 가능하며 저작권 및 라이선스 고지를 유지해야 합니다. 이 라이선스는 다른 하위 프로젝트에 적용되지 않습니다. 외부 서비스·상표·앨범아트·가사 등 제3자 콘텐츠의 권리는 각 소유자에게 있으며 MIT 허용 범위에 포함되지 않습니다.
+
+## 글꼴
+
+영문은 [Inter](https://rsms.me/inter/), 한글은 [Noto Sans KR](https://fonts.google.com/noto/specimen/Noto+Sans+KR)을 사용합니다. 두 폰트는 SIL Open Font License로 배포하며 [라이선스 고지](dist/fonts)를 포함합니다. 폰트는 사이트에서 직접 제공하므로 방문 시 Google Fonts 서버에 접속하지 않습니다. GitHub README 본문 글꼴은 GitHub가 결정하고, 이 글꼴은 실행 앱과 미리보기에 적용됩니다.
 
 ## 기여하기
 

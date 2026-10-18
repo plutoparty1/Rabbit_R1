@@ -1,7 +1,7 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r18';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r18';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r18';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r19';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r19';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r19';
 const applyStaticLocale = createStaticTranslator(document);
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);

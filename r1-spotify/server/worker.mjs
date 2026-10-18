@@ -48,7 +48,7 @@ export default {
     if (!['GET', 'HEAD'].includes(request.method)) return new Response('GET 요청만 사용할 수 있습니다.', { status: 405, headers: { Allow: 'GET, HEAD' } });
     const asset = assets[url.pathname === '/' ? '/index.html' : url.pathname];
     if (!asset) return new Response('페이지를 찾을 수 없습니다.', { status: 404 });
-    return new Response(request.method === 'HEAD' ? null : asset.body,
-      { headers: { 'Content-Type': asset.type, 'Cache-Control': 'no-cache', 'X-Content-Type-Options': 'nosniff' } });
+    return new Response(request.method === 'HEAD' ? null : asset.encoding === 'base64' ? Uint8Array.from(atob(asset.body), char => char.charCodeAt(0)) : asset.body,
+      { headers: { 'Content-Type': asset.type, 'Cache-Control': url.pathname.startsWith('/fonts/') ? 'public, max-age=31536000, immutable' : 'no-cache', 'X-Content-Type-Options': 'nosniff' } });
   },
 };

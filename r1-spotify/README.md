@@ -29,9 +29,9 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Preview
 
-<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
+<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-real-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-real-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-real-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
-240 × 282 English UI previews featuring **Sing the Night** by **Siol**, from **Distorted Gaze**. Song and album display names are translated for this preview. Track metadata and artwork: [Bugs](https://music.bugs.co.kr/track/32794635). Playback is mocked; lyrics screenshots use labeled layout sample text, not the complete song lyrics. The actual app renders the provider’s full response in its original language and supports scrolling to the end.
+English UI previews feature **Sing the Night** by **Siol**, from **Distorted Gaze** (metadata translated for the preview). Track information, artwork and original Korean lyrics: [Bugs](https://music.bugs.co.kr/track/32794635). Playback state is mocked; lyrics screenshots show a short excerpt fetched from the real provider response. The live app renders the complete returned lyrics with scrolling. Original lyrics are not translated.
 
 ## Get started
 
@@ -136,15 +136,9 @@ Bugs matching checks title, artist aliases and a duration difference of at most 
 
 Bugs server lookup has a 20-second budget; the browser waits up to 25 seconds. Successful responses can be reused by the device for 5 minutes. Provider availability, coverage and public page structure may change.
 
-## Dedicated Cloudflare hosting
+## Hosting
 
-**Migration is prepared but not yet live.** The dedicated Cloudflare account has not been created, so the current launch URL remains on Sites. Operator hosting setup is separate from each user's Spotify Client ID setup.
-
-1. The operator creates the project Cloudflare account and verifies its email.
-2. Sign in and deploy with the CLI below, or add that account's `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` in repository Settings → Secrets and variables → Actions. Scope the token to Workers editing in that account; never place it in source or chat.
-3. Run **Deploy R1 Spotify to Cloudflare → Run workflow** in GitHub Actions. The [deployment workflow](../.github/workflows/r1-spotify-cloudflare.yml) is manually triggered.
-4. Check the actual HTTPS URL, lyrics and both login modes. Each user must add the new URL to their own Spotify app's Redirect URIs.
-5. Update [Creation configuration](docs/install-creation.json), launch/Redirect URLs in both READMEs and the QR before retiring the Sites launch URL. The new origin requires login again; old sessions are not transferred.
+The public app remains on its existing Sites hosting. It is not being migrated to Cloudflare. The self-hosting instructions below are optional for developers operating an independent fork.
 
 ## Self-host
 
@@ -254,11 +248,15 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261018-r18`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r19`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 
 Code and original documentation/SVG assets in `r1-spotify/` are available under the [MIT license](LICENSE). You may use, modify, copy, redistribute and use them commercially while retaining the copyright and license notice. This license does not apply to sibling projects. Third-party services, trademarks, album art and lyrics remain subject to their owners' rights and are not covered by this MIT grant.
+
+## Typography
+
+Latin text uses [Inter](https://rsms.me/inter/); Korean uses [Noto Sans KR](https://fonts.google.com/noto/specimen/Noto+Sans+KR). Both are distributed under the SIL Open Font License, with [license notices](dist/fonts) included. Font files are served from the app itself, without runtime requests to Google Fonts. These fonts apply to the app and screenshots; GitHub controls the README body font.
 
 ## Contributing
 

@@ -1,5 +1,5 @@
 // 기존 정적 화면을 서버에 포함하여 별도 라이브러리나 파일 저장소 없이 동일한 주소로 제공합니다.
-import { readFile, writeFile, mkdir, copyFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, copyFile, readdir } from 'node:fs/promises';
 
 const root = new URL('../', import.meta.url);
 const types = { 'index.html': 'text/html', 'style.css': 'text/css', 'app.mjs': 'text/javascript', 'core.mjs': 'text/javascript', 'spotify.mjs': 'text/javascript' };
@@ -7,6 +7,11 @@ const assets = {};
 types['i18n.mjs'] = 'text/javascript';
 for (const [filename, type] of Object.entries(types)) {
   assets['/' + filename] = { type: type + '; charset=utf-8', body: await readFile(new URL('dist/' + filename, root), 'utf8') };
+}
+// Font files are served locally, without a third-party font request.
+for (const filename of await readdir(new URL('dist/fonts/', root))) {
+  if (!/^[a-f0-9]{16}\.woff2$/.test(filename)) continue;
+  assets['/fonts/' + filename] = { type: 'font/woff2', encoding: 'base64', body: (await readFile(new URL('dist/fonts/' + filename, root))).toString('base64') };
 }
 const output = new URL('dist/server/', root);
 await mkdir(output, { recursive: true });
