@@ -29,9 +29,9 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Preview
 
-<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-real-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-real-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-real-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
+<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-full-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-full-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-full-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
-English UI previews feature **Sing the Night** by **Siol**, from **Distorted Gaze** (metadata translated for the preview). Track information, artwork and original Korean lyrics: [Bugs](https://music.bugs.co.kr/track/32794635). Playback state is mocked; lyrics screenshots show a short excerpt fetched from the real provider response. The live app renders the complete returned lyrics with scrolling. Original lyrics are not translated.
+English UI previews feature **Sing the Night** by **Siol**, from **Distorted Gaze** (metadata translated for the preview). Track information, artwork and original Korean lyrics: [Bugs](https://music.bugs.co.kr/track/32794635). Playback state is mocked. At the song owner’s request, the preview loads all 42 lines returned by Bugs and fills the visible lyrics viewport with actual lyrics; the remaining lines are scrollable. The UI is English and the original Korean lyrics remain untranslated.
 
 ## Get started
 

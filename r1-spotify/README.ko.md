@@ -29,9 +29,9 @@
 
 ## 화면 미리보기
 
-<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/previews/siol-night-player-real-ko.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/previews/siol-night-lyrics-real-ko.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/previews/siol-night-controls-real-ko.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
+<table><tr><th>현재 재생</th><th>가사에 집중</th><th>따라가기 설정</th></tr><tr><td><img src="docs/previews/siol-night-player-full-ko.png" width="240" alt="앨범아트와 재생 버튼" /></td><td><img src="docs/previews/siol-night-lyrics-full-ko.png" width="240" alt="가사 전용 화면" /></td><td><img src="docs/previews/siol-night-controls-full-ko.png" width="240" alt="가사 따라가기 체크박스" /></td></tr></table>
 
-시올의 **밤을 노래하자**(앨범 **왜곡된 시선**) 한국어 UI 미리보기입니다. 곡 정보·앨범아트·가사 출처: [벅스](https://music.bugs.co.kr/track/32794635). 재생 상태만 모의 처리했으며 가사 화면은 공개 제공처의 실제 응답에서 짧게 발췌했습니다. 실제 앱은 반환된 가사 전체를 스크롤로 표시합니다.
+시올의 **밤을 노래하자**(앨범 **왜곡된 시선**) 한국어 UI 미리보기입니다. 곡 정보·앨범아트·가사 출처: [벅스](https://music.bugs.co.kr/track/32794635). 재생 상태만 모의 처리했으며 가사는 곡 소유자의 요청에 따라 벅스가 반환한 전체 42줄을 불러왔습니다. 미리보기는 실제 가사 여러 줄로 화면을 채운 모습이며 나머지는 스크롤로 볼 수 있습니다.
 
 ## 시작하기
 
