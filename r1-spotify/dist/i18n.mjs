@@ -5,6 +5,9 @@ export function getLocale(source = globalThis.navigator) {
 }
 
 const english = {
+  '이 기기에 저장된 Client ID 불러오기': 'Use the Client ID saved on this device',
+  '기존 Client ID를 불러왔습니다. 로그인 버튼을 눌러 주세요.': 'Previous Client ID restored. Select the login button.',
+  '버전 20261018-r20 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r20 · Disconnect removes saved login data.',
   '버전 20261018-r19 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r19 · Disconnect removes saved login data.',
   '가사 끝': 'End of lyrics',
   '전체 가사 · 휠이나 터치로 아래로 탐색': 'Full lyrics · scroll down with wheel or touch',

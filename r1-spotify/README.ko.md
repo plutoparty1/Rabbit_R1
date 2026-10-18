@@ -104,7 +104,7 @@ Client ID 입력란 위에서 로그인 보관 방식을 선택합니다.
 | INVALID_CLIENT / Redirect 오류 | 본인 앱의 Redirect URI가 실행 앱 표시 주소와 끝 슬래시까지 같은지 확인합니다. |
 | 로그인 후 403 / 재생 권한 없음 | **본인 앱**의 Users Management에서 로그인 계정의 접근을 확인하고, 필요하면 Add new user에 본인 이름·Spotify 이메일을 등록합니다. Premium과 기기 제한도 확인합니다. |
 | 로그인했지만 곡이 안 보임 | 같은 계정의 휴대폰·PC·스피커에서 먼저 곡을 재생합니다. |
-| 예전 공용 ID로 연결했음 | 새 버전은 공용 연결을 해제합니다. 본인 Client ID를 넣어 다시 로그인합니다. |
+| 예전 공용 ID로 연결했음 | 자동 설정된 예전 공용 연결만 해제합니다. 본인이 직접 설정한 ID는 유지합니다. 저장된 ID 불러오기 버튼으로 이전 ID를 복원한 뒤 로그인할 수 있습니다. |
 
 Spotify 개발자 모드의 인증 사용자·요청 제한은 **각 사용자가 만든 Spotify 앱에 적용**됩니다. 이 프로젝트 전체 사용자가 하나의 Client ID를 공유하지 않습니다. 앱 생성 가능 여부와 계정 조건은 Spotify 정책을 따릅니다. [공식 할당량 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
 
@@ -248,7 +248,7 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261018-r19`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261018-r20`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
 ## 라이선스
 

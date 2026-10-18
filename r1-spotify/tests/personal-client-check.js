@@ -40,6 +40,10 @@ async (page) => {
     await tab.reload();
     await tab.locator('#settings-view').waitFor({ state: 'visible' });
     check(await tab.locator('#client-id').inputValue() === '', 'Retired shared ID must not be reused');
+    check(await tab.locator('#restore-client-id').isVisible(), 'Saved legacy ID needs a manual recovery action');
+    await tab.locator('#restore-client-id').click();
+    check(await tab.locator('#client-id').inputValue() === '3cd6c3a652e44ba0b3f685d4a506a0b8', 'Manual recovery must fill the saved ID');
+    await tab.locator('#setup-guide > summary').click();
     await tab.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText: async () => {} } }); });
     await tab.locator('#copy-redirect').click();
     await tab.waitForFunction(() => Boolean(document.getElementById('copy-message').textContent));
@@ -54,6 +58,16 @@ async (page) => {
     check(await tab.locator('#client-id').inputValue() === '', 'Old shared token must not populate the input');
     check(await tab.locator('#disconnect').isHidden(), 'Shared session must be disconnected');
     check(playerCalls === 0, 'Shared session must be removed before playback requests');
+    await tab.evaluate(() => {
+      const ownerId = '3cd6c3a652e44ba0b3f685d4a506a0b8';
+      localStorage.setItem('r1_spotify_personal_client_id', ownerId);
+      sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ clientId: ownerId, access_token: 'mock-owner', refresh_token: 'mock-owner-refresh', expiresAt: Date.now() + 3600000 }));
+    });
+    await tab.reload();
+    await tab.waitForFunction(() => /로그인 유지:|Login saved/.test(document.getElementById('storage-status').textContent));
+    await tab.locator('#settings-button').click();
+    check(await tab.locator('#client-id').inputValue() === '3cd6c3a652e44ba0b3f685d4a506a0b8', 'Explicit owner ID must be retained');
+    check(await tab.locator('#disconnect').isVisible(), 'Explicit owner session was incorrectly disconnected');
     check(!errors.length, errors.join('\n'));
     await context.close();
   }

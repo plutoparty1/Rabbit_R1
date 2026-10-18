@@ -1,7 +1,7 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r19';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r19';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r19';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r20';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r20';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r20';
 const applyStaticLocale = createStaticTranslator(document);
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
@@ -309,7 +309,7 @@ const modeInputs = [...document.querySelectorAll('input[name="device-mode"]')];
 for (const input of modeInputs) {
   input.checked = input.value === getSessionMode();
   input.onchange = async () => {
-    $('connect').disabled = true;
+    $('connect').disabled = true; $('restore-client-id').hidden = true;
     try {
       // Disconnect before changing policy; never promote a temporary login to persistent storage.
       await client.disconnect();
@@ -399,18 +399,29 @@ async function start() {
   if (returned.searchParams.has('code') || returned.searchParams.has('error')) history.replaceState({}, '', redirectUri);
   try {
     // Client ID는 공개 앱 식별자이며 로그인 토큰이나 Client Secret을 포함하지 않습니다.
-    let savedId = '';
-    try { savedId = getSessionMode() === 'shared' ? sessionStorage.getItem('r1_spotify_personal_client_id') || '' : localStorage.getItem('r1_spotify_personal_client_id') || localStorage.getItem('r1_spotify_client_id') || ''; } catch {}
-    // The retired shared ID is recognized only to migrate old installations; never used as a default.
+    let savedId = '', explicitId = '';
+    try {
+      const preferences = getSessionMode() === 'shared' ? sessionStorage : localStorage;
+      explicitId = preferences.getItem('r1_spotify_personal_client_id') || '';
+      savedId = explicitId || (getSessionMode() === 'personal' ? localStorage.getItem('r1_spotify_client_id') || '' : '');
+    } catch {}
+    // Retire implicit legacy defaults only. An owner may explicitly configure that same ID.
     const retiredSharedId = '3cd6c3a652e44ba0b3f685d4a506a0b8';
-    $('client-id').value = /^[a-f\d]{32}$/i.test(savedId) && savedId !== retiredSharedId ? savedId : '';
+    $('client-id').value = /^[a-f\d]{32}$/i.test(savedId) && (savedId !== retiredSharedId || explicitId === savedId) ? savedId : '';
     await client.init(); await client.finish(returned);
-    if (client.tokens?.clientId === retiredSharedId) {
+    if (client.tokens?.clientId === retiredSharedId && explicitId !== retiredSharedId) {
       await client.disconnect();
       $('auth-message').textContent = t('이전 공용 연결을 해제했습니다. 본인 앱의 Client ID를 입력해 다시 연결해 주세요.');
     }
     if (client.connected && client.tokens?.clientId) $('client-id').value = client.tokens.clientId;
     $('setup-guide').open = !$('client-id').value;
+    $('restore-client-id').hidden = Boolean($('client-id').value) || !/^[a-f\d]{32}$/i.test(savedId);
+    $('restore-client-id').onclick = () => {
+      $('client-id').value = savedId;
+      $('restore-client-id').hidden = true;
+      $('setup-guide').open = false;
+      $('auth-message').textContent = t('기존 Client ID를 불러왔습니다. 로그인 버튼을 눌러 주세요.');
+    };
     startupReady = true;
     $('storage-status').textContent = client.connected ? t(client.storage.notice) : t('로그인 정보를 복원하지 못했습니다. 기기 저장소와 연결 상태를 확인해 주세요.');
     render(); await refreshPlayer();

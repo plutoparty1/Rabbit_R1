@@ -29,9 +29,9 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Preview
 
-<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/siol-night-player-full-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/siol-night-lyrics-full-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/siol-night-controls-full-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
+<table><tr><th>Now playing</th><th>Lyrics focus</th><th>Follow controls</th></tr><tr><td><img src="docs/previews/sior-night-player-full-en.png" width="240" alt="Album artwork and playback controls" /></td><td><img src="docs/previews/sior-night-lyrics-full-en.png" width="240" alt="Lyrics-only view" /></td><td><img src="docs/previews/sior-night-controls-full-en.png" width="240" alt="Lyrics follow checkbox" /></td></tr></table>
 
-English UI previews feature **Sing the Night** by **Siol**, from **Distorted Gaze** (metadata translated for the preview). Track information, artwork and original Korean lyrics: [Bugs](https://music.bugs.co.kr/track/32794635). Playback state is mocked. At the song owner’s request, the preview loads all 42 lines returned by Bugs and fills the visible lyrics viewport with actual lyrics; the remaining lines are scrollable. The UI is English and the original Korean lyrics remain untranslated.
+English UI previews feature **Sing the Night** by **Sior**, from **Distorted Gaze** (metadata translated for the preview). Track information, artwork and original Korean lyrics: [Bugs](https://music.bugs.co.kr/track/32794635). Playback state is mocked. At the song owner’s request, the preview loads all 42 lines returned by Bugs and fills the visible lyrics viewport with actual lyrics; the remaining lines are scrollable. The UI is English and the original Korean lyrics remain untranslated.
 
 ## Get started
 
@@ -104,7 +104,7 @@ Changing modes disconnects and removes saved tokens. Shared-mode OAuth preparati
 | INVALID_CLIENT / redirect error | Check your app's Redirect URI against the launch app's displayed address, including the trailing slash. |
 | 403 / playback permission denied after login | Check account access in **your own app's** Users Management; if needed, add your name and Spotify email with Add new user. Also check Premium and device restrictions. |
 | Signed in but no track appears | Start playback on a phone, computer or speaker using the same account. |
-| Previously used the shared ID | This version disconnects the retired shared connection. Enter your own Client ID and log in again. |
+| Previously used the shared ID | Only implicit legacy defaults are disconnected. Explicitly configured IDs are retained, including the original app owner’s ID. Use the saved-ID recovery button to fill a previous ID, then log in. |
 
 Spotify development-mode user and request limits apply to **each user's own Spotify app**. Users of this project do not share a single Client ID. App creation eligibility and account requirements remain subject to Spotify policy. [Official quota policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
 
@@ -248,7 +248,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261018-r19`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r20`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 
