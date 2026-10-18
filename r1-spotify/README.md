@@ -14,7 +14,7 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 [Get started](#get-started) · [Controls](#controls) · [Self-host](#self-host) · [Privacy](#privacy-and-authentication) · [Troubleshooting](#troubleshooting) · [Verification](#verification)
 
-> MIT-licensed and self-hostable. Fork or clone this repository, deploy your own instance, and connect your own Spotify app. Playback control requires Spotify Premium and an active playback device.
+> Open-source under MIT. Open the hosted app and sign in to Spotify to get started. Self-hosting is optional for developers. Playback control requires Spotify Premium, app account access and an active playback device.
 
 ## Built for a small screen
 
@@ -35,45 +35,19 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 
 ## Get started
 
-Share this repository so others can install their own copy. **Each installer uses their own deployment URL and Spotify Client ID.** Installation does not depend on the repository owner's hosted site, ChatGPT account or Spotify app invitation.
+**Use the hosted app without deploying a server, registering a developer app or entering a Client ID.**
 
-### Prerequisites
+1. [Open R1 Spotify](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/) or use the installation QR below, and add its launch URL to rabbit Creation.
+2. Select **Log in to Spotify**, sign in with your own account and grant permission.
+3. Play a track on a phone, computer or speaker using the same account, then control it from r1.
 
-- A rabbit r1 and access to register a Creation URL
-- Spotify Premium, with an active phone, computer or speaker on the same account
-- Git, Node.js 24 and npm
-- HTTPS hosting: the example below uses Cloudflare Workers
-- A Spotify Web API app registered under your own account
+<p align="center"><img src="docs/install-qr.png" width="180" alt="Installation QR for the existing R1 Spotify launch URL" /></p>
 
-### 1. Get the source
+Login is saved on your device and restored on reopening. A Client ID is preconfigured; **Advanced settings are for developers hosting their own instance**. See the [Creation configuration](docs/install-creation.json) for installation metadata.
 
-To customize and contribute, **Fork** the repository first. To install, clone it directly:
+Site access was made public on 2026-10-18. **Public site access and Spotify API account access are separate.** If the operating Spotify app is in development mode, its operator must manage an allowlist with a limit of five authenticated users. If playback permission is denied after login, the operator should check account access, Premium and device restrictions. The operating app's actual quota mode and registered user count are not available from this repository; unrestricted public use has not been verified. [Spotify policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
 
-```powershell
-git clone https://github.com/plutoparty1/Rabbit_R1.git
-cd Rabbit_R1/r1-spotify
-node scripts/build.mjs
-```
-
-### 2. Deploy your HTTPS instance
-
-Follow [Self-host](#self-host) to deploy the Worker and record its HTTPS URL, for example `https://r1-spotify.<your-subdomain>.workers.dev/`. Your deployment does not require the repository owner's ChatGPT login.
-
-### 3. Connect your Spotify app
-
-1. Create your own Web API app in the [Spotify Developer Dashboard](https://developer.spotify.com/dashboard).
-2. Register **your deployment URL** as its Redirect URI. Match the address shown in connection settings exactly, including the trailing `/`.
-3. Open your deployed app → three-dot menu → connection settings and enter your **Client ID**. Replace any prefilled value with your own. No Client Secret is used.
-4. Add your Spotify account to your app's user allowlist and sign in.
-
-### 4. Add it to rabbit Creation
-
-1. Copy the [installation template](docs/install-creation.example.json) and replace `url` with your HTTPS address.
-2. Register that address as your rabbit Creation launch URL. Generate a new QR using your address if you distribute installation details by QR.
-3. Open it on r1, sign in and grant playback read/control permissions.
-4. Start a track on another device with the same account. Verify track information, controls and lyrics on r1.
-
-Once installed, no companion PC is needed. Static-only hosting such as GitHub Pages does not include the Bugs lookup server; deploy the Worker for the full feature set.
+Developers who want to modify the source or operate an independent instance can use [Self-host](#self-host). It is optional for users of the hosted app.
 
 ## Controls
 
@@ -105,6 +79,16 @@ Bugs server lookup has a 20-second budget; the browser waits up to 25 seconds. S
 
 ## Self-host
 
+Optional for developers and independent operators. Prepare Git, Node.js 24 with npm, an HTTPS hosting account and your own Spotify Web API app.
+
+```powershell
+git clone https://github.com/plutoparty1/Rabbit_R1.git
+cd Rabbit_R1/r1-spotify
+```
+
+After deployment, register your exact HTTPS Redirect URI in Spotify Dashboard and enter your Client ID under Advanced settings. Update the [installation template](docs/install-creation.example.json) and rabbit Creation launch URL to your own deployment.
+
+
 The frontend and server build without application package installation. `npx` downloads Wrangler when needed. Run these commands from `r1-spotify`:
 
 ```powershell
@@ -126,9 +110,9 @@ The local address is for development. Use your deployed HTTPS URL for r1 install
 
 ### Sharing the project
 
-- **Help others install:** Share this GitHub repository and README. Each installer uses their own Spotify app and deployment URL.
+- **Help others use the app:** Share the hosted app URL or QR and the quick-start instructions.
 - **Share your modifications:** Publish your fork and retain the MIT copyright and license notice.
-- **Operate a shared instance:** Its operator manages hosting access and Spotify app users separately from the default self-host installation flow.
+- **Operate a shared instance:** Its operator manages hosting access and Spotify app users; end users use the login flow above.
 
 Spotify development-mode limits apply to **each Spotify app**, not to how many people may fork or download the source. As checked on 2026-10-18, the app owner needs Premium and each app supports up to five authenticated, allowlisted users. Serving a larger audience with one Client ID requires separate extended quota approval. Check the [official Spotify policy](https://developer.spotify.com/documentation/web-api/concepts/quota-modes) for current conditions.
 
@@ -195,7 +179,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker res
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
 
-The source UI identifies itself as `20261008-r13`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261018-r15`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

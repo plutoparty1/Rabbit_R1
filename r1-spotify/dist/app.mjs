@@ -1,6 +1,6 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
 import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261008-r6';
-import { SpotifyClient, getLyrics } from './spotify.mjs?v=20261008-r13';
+import { SpotifyClient, getLyrics } from './spotify.mjs?v=20261018-r15';
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
 const client = new SpotifyClient({ redirectUri });
@@ -358,6 +358,7 @@ async function start() {
     await client.init(); await client.finish(returned);
     $('storage-status').textContent = client.connected ? client.storage.notice : '로그인 정보를 복원하지 못했습니다. 기기 저장소와 연결 상태를 확인해 주세요.';
     render(); await refreshPlayer();
+    if (!client.connected) show('settings');
     if (!client.connected && client.authorizationPending) {
       show('settings');
       $('auth-message').textContent = 'Spotify 로그인 완료를 아직 확인하지 못했습니다. 로그인을 다시 누른 뒤 앱으로 자동 돌아올 때까지 기다려 주세요.';
