@@ -11,9 +11,9 @@ async (page) => {
   try {
     page = await context.newPage(); page.on('pageerror', error => errors.push(error.message));
     await page.goto('http://127.0.0.1:8791/');
-    await page.locator('#art-button').click();
+    await page.locator('#settings-view').waitFor({ state: 'visible' });
     check(await page.locator('#settings-view').isVisible(), '연결 전 설정 화면이 열리지 않습니다.');
-    check(await page.locator('#client-id').inputValue() === '3cd6c3a652e44ba0b3f685d4a506a0b8', '승인된 Client ID가 연결 화면에 표시되지 않습니다.');
+    check(await page.locator('#client-id').inputValue() === '', '새 기기에 공용 Client ID가 표시되면 안 됩니다.');
     await context.addInitScript(() => {
       sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ access_token: 'test', refresh_token: 'test', clientId: 'a'.repeat(32), expiresAt: Date.now() + 3600000 }));
       document.modelContext = { registerTool(tool) { window.testTool = tool; } };
@@ -33,7 +33,7 @@ async (page) => {
     await page.reload(); await page.locator('#title').filter({ hasText: '시험용 곡 1' }).waitFor();
     const size = await page.evaluate(() => ({ width: innerWidth, height: innerHeight, scrollWidth: document.documentElement.scrollWidth, scrollHeight: document.documentElement.scrollHeight }));
     check(size.scrollWidth === 240 && size.scrollHeight === 282, '래빗 화면에 넘침이 있습니다: ' + JSON.stringify(size));
-    await page.screenshot({ path: 'C:/Users/정산-PC/jjs1124/r1-spotify/docs/player-240x282.png' });
+    await page.screenshot({ path: '.project_tmp/checks/player-240x282.png' });
     const art = await page.locator('#art-button').boundingBox();
     const header = await page.locator('.player header').boundingBox(), metadata = await page.locator('.metadata').boundingBox();
     check(art.y >= header.y + header.height && art.y + art.height <= metadata.y, '앨범아트가 제목 또는 머리글과 겹칩니다.');
@@ -57,7 +57,7 @@ async (page) => {
     current.progress_ms = 5500;
     await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await page.waitForFunction(() => document.querySelector('#lyrics-lines p.active')?.textContent === '두 번째 시험 문장');
-    await page.screenshot({ path: 'C:/Users/정산-PC/jjs1124/r1-spotify/docs/lyrics-240x282.png' });
+    await page.screenshot({ path: '.project_tmp/checks/lyrics-240x282.png' });
     await page.evaluate(() => dispatchEvent(new Event('scrollDown')));
     check(!await page.locator('#follow').isChecked(), '휠 탐색 후 따라가기가 해제되지 않습니다.');
     await page.locator('#lyrics-lines').click({ position: { x: 25, y: 25 } });
