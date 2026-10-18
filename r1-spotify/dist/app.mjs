@@ -1,9 +1,10 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
 import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261008-r6';
-import { SpotifyClient, getLyrics } from './spotify.mjs?v=20261018-r15';
+import { SpotifyClient, getLyrics } from './spotify.mjs?v=20261018-r16';
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
 const client = new SpotifyClient({ redirectUri });
+let startupReady = false;
 let player = normalizePlayer(null), sampledAt = performance.now(), busy = false, stale = false;
 let screen = 'player', pollTimer, revision = 0, lastAction = -Infinity;
 let volumeTarget = null, volumeDevice = null, volumeTimer;
@@ -72,7 +73,7 @@ function volumeHelp() {
 // 오래된 응답이 새 곡이나 연결 해제 상태를 덮지 못하도록 요청 번호를 확인합니다.
 async function refreshPlayer() {
   clearTimeout(pollTimer);
-  if (!client.connected || document.hidden || suspended) return;
+  if (!startupReady || !client.connected || document.hidden || suspended) return;
   const request = ++revision;
   let delay = 3000;
   try {
@@ -289,11 +290,18 @@ $('follow').onchange = () => { following = $('follow').checked; setLyricsControl
 $('settings-button').onclick = () => show('settings');
 $('settings-back').onclick = () => show('player');
 $('redirect-uri').textContent = redirectUri;
+$('copy-redirect').onclick = async () => {
+  try { await navigator.clipboard.writeText(redirectUri); $('copy-message').textContent = String('복사했습니다.'); }
+  catch { $('copy-message').textContent = String('복사할 수 없습니다. 위 주소를 길게 눌러 복사해 주세요.'); }
+};
 $('cover').onerror = () => { $('cover').hidden = true; $('empty-art').hidden = false; $('empty-message').textContent = '앨범아트를 불러오지 못했습니다.'; };
 $('connect-form').onsubmit = async event => {
   event.preventDefault(); $('connect').disabled = true;
   try {
-    const id = $('client-id').value.trim(); localStorage.setItem('r1_spotify_client_id', id);
+    const id = $('client-id').value.trim();
+    if (!/^[a-f\d]{32}$/i.test(id)) { $('client-id').focus(); throw new Error('Client ID 32자리를 입력해 주세요.'); }
+    // Public app identifier only; session tokens use the existing device store.
+    try { localStorage.setItem('r1_spotify_personal_client_id', id); } catch { /* Login can continue without preference storage. */ }
     location.assign(await client.authorize(id));
   } catch (error) { $('auth-message').textContent = error.message; $('connect').disabled = false; }
 };
@@ -354,8 +362,19 @@ async function start() {
   if (returned.searchParams.has('code') || returned.searchParams.has('error')) history.replaceState({}, '', redirectUri);
   try {
     // Client ID는 공개 앱 식별자이며 로그인 토큰이나 Client Secret을 포함하지 않습니다.
-    $('client-id').value = localStorage.getItem('r1_spotify_client_id') || '3cd6c3a652e44ba0b3f685d4a506a0b8';
+    let savedId = '';
+    try { savedId = localStorage.getItem('r1_spotify_personal_client_id') || localStorage.getItem('r1_spotify_client_id') || ''; } catch {}
+    // The retired shared ID is recognized only to migrate old installations; never used as a default.
+    const retiredSharedId = '3cd6c3a652e44ba0b3f685d4a506a0b8';
+    $('client-id').value = /^[a-f\d]{32}$/i.test(savedId) && savedId !== retiredSharedId ? savedId : '';
     await client.init(); await client.finish(returned);
+    if (client.tokens?.clientId === retiredSharedId) {
+      await client.disconnect();
+      $('auth-message').textContent = String('이전 공용 연결을 해제했습니다. 본인 앱의 Client ID를 입력해 다시 연결해 주세요.');
+    }
+    if (client.connected && client.tokens?.clientId) $('client-id').value = client.tokens.clientId;
+    $('setup-guide').open = !$('client-id').value;
+    startupReady = true;
     $('storage-status').textContent = client.connected ? client.storage.notice : '로그인 정보를 복원하지 못했습니다. 기기 저장소와 연결 상태를 확인해 주세요.';
     render(); await refreshPlayer();
     if (!client.connected) show('settings');

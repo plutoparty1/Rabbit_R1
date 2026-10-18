@@ -14,7 +14,7 @@
 
 [시작하기](#시작하기) · [조작 가이드](#조작-가이드) · [직접 배포](#직접-배포) · [개인정보](#개인정보와-인증) · [문제 해결](#문제-해결) · [검증](#검증)
 
-> MIT 라이선스 오픈소스입니다. 일반 사용자는 실행 앱에서 Spotify에 로그인해 시작하며, 직접 배포는 개발자를 위한 선택 사항입니다. 재생 제어에는 Premium·앱 계정 사용 권한·활성 재생 기기가 필요합니다.
+> MIT 라이선스 오픈소스입니다. 사용자는 실행 앱에서 본인 Spotify Client ID를 한 번 설정하고 로그인하며, 직접 배포는 개발자를 위한 선택 사항입니다. 재생 제어에는 Premium·앱 계정 사용 권한·활성 재생 기기가 필요합니다.
 
 ## 작은 화면에 맞춘 경험
 
@@ -35,19 +35,67 @@
 
 ## 시작하기
 
-**일반 사용자는 배포·개발자 앱 등록·Client ID 입력 없이 기존 실행 앱을 사용합니다.**
+**공용 실행 사이트 + 본인 Spotify Client ID**로 사용합니다. 서버 배포나 저장소 소유자의 Spotify 초대는 필요 없습니다. 처음 한 번 아래 설정을 마치면 이후 기기에 저장된 연결을 복원합니다.
 
-1. [R1 Spotify 열기](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/) 또는 아래 설치 QR로 실행 주소를 확인하고 rabbit Creation에 추가합니다.
-2. **Spotify 로그인**을 누르고 본인 계정으로 로그인·동의합니다.
-3. 같은 계정의 휴대폰·컴퓨터·스피커에서 곡을 재생하면 r1에서 제어할 수 있습니다.
+### 준비물
 
-<p align="center"><img src="docs/install-qr.png" width="180" alt="기존 R1 Spotify 실행 주소 설치 QR" /></p>
+- rabbit r1과 Creation을 추가할 수 있는 환경
+- 본인의 Spotify Premium 계정
+- Spotify 개발자 설정에 사용할 휴대폰 또는 PC
+- 같은 Spotify 계정으로 음악을 재생할 휴대폰·PC·스피커
 
-로그인은 기기에 저장되어 다음 실행에 복원됩니다. Client ID는 기본 설정되어 있으며 **고급 설정은 직접 배포하는 개발자만 사용**합니다. 설치 정보는 [Creation 설정](docs/install-creation.json)을 참고합니다.
+### 1. 앱을 Creation에 추가
 
-사이트는 2026-10-18 공개 접근으로 전환했습니다. **사이트 공개와 Spotify 계정의 API 사용 권한은 별개**입니다. 운영 앱이 Spotify 개발자 모드이면 운영자가 사용자 허용 목록을 관리해야 하며 최대 5명의 인증 사용자 제한이 있습니다. 로그인 후 권한 오류가 나면 운영자가 계정 접근·Premium·기기 제한을 확인해야 합니다. 현재 운영 앱의 할당량 모드·등록 인원은 이 저장소에서 확인되지 않으므로 불특정 다수의 무제한 사용이 검증된 상태는 아닙니다. [Spotify 공식 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
+[R1 Spotify 실행 앱](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/)의 주소를 rabbit Creation의 실행 URL로 등록합니다. 아래 QR은 같은 실행 주소용이며, Client ID를 발급하거나 계정을 연결해 주는 QR은 아닙니다.
 
-소스를 수정하거나 독립 운영하려는 개발자는 아래 [직접 배포](#직접-배포)를 이용합니다. 일반 사용자의 필수 설치 과정이 아닙니다.
+<p align="center"><img src="docs/install-qr.png" width="180" alt="R1 Spotify 실행 주소 QR" /></p>
+
+[Creation 설치 정보](docs/install-creation.json)도 사용할 수 있습니다. 소스 다운로드나 서버 배포는 일반 사용자에게 필요하지 않습니다.
+
+### 2. 본인 Spotify 개발자 앱 만들기
+
+휴대폰이나 PC에서 [Spotify Developer Dashboard](https://developer.spotify.com/dashboard)를 엽니다. **실제로 사용할 본인 Premium 계정**으로 로그인하고 **Create app**을 선택합니다.
+
+| 항목 | 입력 예시 |
+| --- | --- |
+| App name | My R1 Spotify |
+| App description | Personal Spotify remote for my rabbit r1 |
+| Website (요청되는 경우) | `https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/` |
+| API/SDK 선택 (표시되는 경우) | Web API |
+| Redirect URI | 아래 3단계 주소를 정확히 입력 |
+
+개발자 약관을 확인하고 앱을 생성합니다. Dashboard의 항목 위치와 이름은 바뀔 수 있으며 [Spotify 공식 앱 등록 안내](https://developer.spotify.com/documentation/web-api/concepts/apps)도 참고합니다.
+
+### 3. Redirect URI 등록
+
+생성한 Spotify 앱의 **Settings → Redirect URIs**에 다음 주소를 등록하고 **Save**합니다. 앱 생성 화면에서 등록했다면 저장된 값을 확인합니다.
+
+```text
+https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/
+```
+
+**끝의 `/`까지 정확히 일치해야 합니다.** R1 Spotify의 연결 화면에도 현재 주소와 ‘주소 복사’ 버튼이 있습니다. 다른 배포 주소를 쓰는 경우 그 화면의 주소를 등록합니다. GitHub 저장소 주소를 Redirect URI로 넣지 않습니다.
+
+### 4. Client ID를 r1에 입력하고 로그인
+
+1. 본인 Spotify 앱 **Settings**에서 **Client ID** 32자리를 복사합니다.
+2. r1의 R1 Spotify 연결 화면에서 **Client ID** 입력란에 붙여 넣거나 입력합니다.
+3. **Client ID 저장 후 로그인**을 누르고 본인 Spotify 계정으로 로그인·동의합니다.
+4. 같은 계정의 다른 기기에서 곡을 재생하고 r1에서 현재 곡과 조작을 확인합니다.
+
+**Client Secret은 필요 없으며 입력하지 않습니다.** Client ID 설정은 현재 기기·브라우저에 저장되므로 휴대폰에서 입력했다면 r1에도 별도로 입력합니다. QR에 개인 Client ID나 인증 토큰을 포함할 필요는 없습니다.
+
+### 연결이 안 될 때
+
+| 증상 | 해결 방법 |
+| --- | --- |
+| Client ID 입력 오류 | Settings의 32자리 Client ID인지 확인합니다. Client Secret이 아닙니다. |
+| INVALID_CLIENT / Redirect 오류 | 본인 앱의 Redirect URI가 실행 앱 표시 주소와 끝 슬래시까지 같은지 확인합니다. |
+| 로그인 후 403 / 재생 권한 없음 | **본인 앱**의 Users Management에서 로그인 계정의 접근을 확인하고, 필요하면 Add new user에 본인 이름·Spotify 이메일을 등록합니다. Premium과 기기 제한도 확인합니다. |
+| 로그인했지만 곡이 안 보임 | 같은 계정의 휴대폰·PC·스피커에서 먼저 곡을 재생합니다. |
+| 예전 공용 ID로 연결했음 | 새 버전은 공용 연결을 해제합니다. 본인 Client ID를 넣어 다시 로그인합니다. |
+
+Spotify 개발자 모드의 인증 사용자·요청 제한은 **각 사용자가 만든 Spotify 앱에 적용**됩니다. 이 프로젝트 전체 사용자가 하나의 Client ID를 공유하지 않습니다. 앱 생성 가능 여부와 계정 조건은 Spotify 정책을 따릅니다. [공식 할당량 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)
 
 ## 조작 가이드
 
@@ -86,7 +134,7 @@ git clone https://github.com/plutoparty1/Rabbit_R1.git
 cd Rabbit_R1/r1-spotify
 ```
 
-배포 후 Spotify Dashboard에 자신의 정확한 HTTPS Redirect URI를 등록하고 앱의 고급 설정에서 본인 Client ID를 입력합니다. [설치 정보 템플릿](docs/install-creation.example.json)의 URL과 rabbit Creation 실행 주소도 본인 배포 주소로 맞춥니다.
+배포 후 Spotify Dashboard에 자신의 정확한 HTTPS Redirect URI를 등록하고 앱의 연결 화면에서 본인 Client ID를 입력합니다. [설치 정보 템플릿](docs/install-creation.example.json)의 URL과 rabbit Creation 실행 주소도 본인 배포 주소로 맞춥니다.
 
 
 프런트엔드와 서버는 별도 애플리케이션 패키지 설치 없이 빌드됩니다. 배포 도구 Wrangler는 `npx`로 실행할 때 내려받습니다. 아래 명령은 `r1-spotify` 폴더에서 실행합니다.
@@ -112,7 +160,7 @@ npx wrangler dev --config wrangler.example.jsonc --port 8791
 
 - **사용 안내:** 실행 앱 주소 또는 QR과 빠른 시작 안내를 공유합니다.
 - **수정본 공유:** 포크한 저장소를 공유하고 MIT 저작권·라이선스 고지를 유지합니다.
-- **하나의 서버를 함께 사용:** 호스팅과 Spotify 앱 사용자 등록은 운영자가 관리하며, 일반 사용자는 위의 로그인 절차를 따릅니다.
+- **하나의 서버를 함께 사용:** 운영자는 호스팅을 관리하고, 각 사용자는 위 안내에 따라 본인 Spotify 앱을 등록하고 연결합니다.
 
 Spotify의 개발자 모드 제한은 **각 Spotify 앱**에 적용됩니다. 저장소를 포크하거나 소스를 다운로드할 수 있는 인원 제한이 아닙니다. 2026-10-18 확인 기준 앱 소유자는 Premium이어야 하며 앱당 인증 사용자는 최대 5명이고 허용 목록 등록이 필요합니다. 하나의 Client ID로 더 많은 사용자에게 제공하려면 별도의 확장 할당량 승인이 필요합니다. 최신 조건은 [Spotify 공식 정책](https://developer.spotify.com/documentation/web-api/concepts/quota-modes)을 확인합니다.
 
@@ -179,7 +227,7 @@ Node 테스트는 핵심 로직·OAuth·Spotify·가사 매칭·벅스·Worker �
 | 과거 r6 사용자 실기 보고 | 로그인 유지·휠 입력·가사 자유 탐색 및 따라가기·재생 버튼 표시 |
 | 추가 확인 필요 | 최신 WebView 전체 흐름·r7 탭 설정 실기·다중 사용자 공유·기기별 볼륨 |
 
-소스 UI 버전은 `20261018-r15`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
+소스 UI 버전은 `20261018-r16`입니다. 자신의 배포 버전은 기기 확인에서 확인합니다. [verification.json](docs/verification.json)은 2026-10-08 기준 과거 기록이며 신규 인증 결과가 아닙니다. 상세 구현·시험 기록은 [기존 한국어 문서 보관본](docs/archive/README.2026-10-18.ko.md)에 보존했습니다.
 
 ## 라이선스
 
