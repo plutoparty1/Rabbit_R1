@@ -1,6 +1,6 @@
-import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r27';
+import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r28';
 
-// One push-to-talk session owns every recorder, stream and asynchronous result.
+// Each hold owns its recorder/results; the microphone stays muted between holds.
 // Safety stop for a missing button-release event, not a normal speaking deadline.
 export const MAX_RECORDING_MS = 60000;
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
@@ -78,20 +78,45 @@ export class VoiceController {
     maxDuration = MAX_RECORDING_MS, maxBytes = MAX_AUDIO_BYTES, transcriber = null } = {}) {
     Object.assign(this, { client, onChange, canStart, deviceId, mediaDevices, Recorder, fetcher, setTimer, clearTimer, maxDuration, maxBytes, transcriber });
     this.session = null;
+    this.microphoneStream = null;
+    this.microphoneEpoch = 0;
     this.state = { phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] };
   }
   get active() { return Boolean(this.session); }
+  get microphoneReady() { return this.usableMicrophone(this.microphoneStream); }
   update(patch) { this.state = { ...this.state, ...patch }; this.onChange(this.state); }
   current(session) { return this.session === session && !session.abort.signal.aborted; }
-  stopTracks(session) { session.stream?.getTracks().forEach(track => track.stop()); session.stream = null; }
+  usableMicrophone(stream) {
+    const tracks = stream?.getAudioTracks?.() || stream?.getTracks?.().filter(track => track.kind !== 'video') || [];
+    return Boolean(stream && stream.active !== false && tracks.length && tracks.every(track => track.readyState === 'live'));
+  }
+  muteMicrophone(stream) { stream?.getTracks().forEach(track => { track.enabled = false; }); }
+  discardMicrophone(stream = this.microphoneStream) {
+    if (!stream) return;
+    this.muteMicrophone(stream);
+    stream.getTracks().forEach(track => { if (track.readyState !== 'ended') track.stop(); });
+    if (this.microphoneStream === stream) this.microphoneStream = null;
+  }
+  parkMicrophone(session) {
+    const stream = session.stream;
+    session.stream = null;
+    this.muteMicrophone(stream);
+    if (stream && (stream !== this.microphoneStream || !this.usableMicrophone(stream))) this.discardMicrophone(stream);
+  }
+  releaseMicrophone() {
+    // Permission prompts cannot be aborted, so invalidate any late grant as well.
+    this.microphoneEpoch++;
+    this.cancel();
+    this.discardMicrophone();
+  }
   cleanup(session) {
     this.clearTimer(session.timer);
     session.abort.abort();
     if (session.recorder) {
       session.recorder.ondataavailable = session.recorder.onstop = session.recorder.onerror = null;
-      try { if (session.recorder.state !== 'inactive') session.recorder.stop(); } catch {}
+      try { if (session.recorder.state !== 'inactive') session.recorder.stop(); } catch { this.discardMicrophone(session.stream); }
     }
-    this.stopTracks(session);
+    this.parkMicrophone(session);
     session.chunks = [];
     if (session.processing) this.transcriber?.cancel?.();
   }
@@ -119,7 +144,7 @@ export class VoiceController {
   }
   async begin() {
     if (this.active || !this.canStart()) return;
-    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, device: this.deviceId() };
+    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, device: this.deviceId(), microphoneEpoch: this.microphoneEpoch };
     this.session = session;
     this.update({ phase: 'preparing', message: '마이크를 준비하고 있습니다. 계속 눌러 주세요.', transcript: '', language: '', tracks: [] });
     try {
@@ -133,11 +158,18 @@ export class VoiceController {
         if (!this.current(session)) return;
         if (!config.enabled) throw new Error('음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.');
       }
-      // Permissions can resolve after release; that stream must never start recording.
-      session.timer = this.setTimer(() => this.fail(session, '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.'), 30000);
-      const stream = await this.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
-      if (!this.current(session) || !session.held) { stream.getTracks().forEach(track => track.stop()); return; }
-      this.clearTimer(session.timer);
+      let stream = this.microphoneStream;
+      if (!this.usableMicrophone(stream)) {
+        this.discardMicrophone(stream);
+        // Permissions can resolve after release; that stream must never record or be cached.
+        session.timer = this.setTimer(() => this.fail(session, '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.'), 30000);
+        stream = await this.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+        if (!this.current(session) || !session.held || session.microphoneEpoch !== this.microphoneEpoch) { this.discardMicrophone(stream); return; }
+        this.clearTimer(session.timer);
+        this.muteMicrophone(stream);
+        if (!this.usableMicrophone(stream)) { this.discardMicrophone(stream); throw new Error('마이크를 사용할 수 없습니다. 마이크 권한을 확인하고 다시 시도해 주세요.'); }
+        this.microphoneStream = stream;
+      }
       session.stream = stream;
       const mimeType = mimeTypes.find(type => this.Recorder.isTypeSupported?.(type));
       session.recorder = new this.Recorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 64000 });
@@ -147,16 +179,29 @@ export class VoiceController {
         if (session.bytes > this.maxBytes) { this.fail(session, '녹음 크기가 너무 큽니다. 더 짧게 말해 주세요.'); return; }
         session.chunks.push(event.data);
       };
-      session.recorder.onerror = () => this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
+      session.recorder.onerror = () => {
+        if (!this.current(session)) return;
+        this.discardMicrophone(stream);
+        this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
+      };
       session.recorder.onstop = () => {
+        if (!this.current(session)) return;
         this.clearTimer(session.timer);
-        this.stopTracks(session);
-        if (this.current(session)) void this.process(session);
+        if (session.held || !this.microphoneReady) {
+          this.discardMicrophone(stream);
+          this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
+          return;
+        }
+        this.parkMicrophone(session);
+        void this.process(session);
       };
       session.recorder.start(250);
+      stream.getAudioTracks?.().forEach(track => { track.enabled = true; });
+      if (!stream.getAudioTracks) stream.getTracks().forEach(track => { track.enabled = true; });
       session.timer = this.setTimer(() => this.release(), this.maxDuration);
       this.update({ phase: 'recording', message: '듣고 있습니다. 놓으면 검색합니다.' });
     } catch (error) {
+      if (this.current(session) && session.stream) this.discardMicrophone(session.stream);
       if (this.current(session)) this.fail(session, ['NotAllowedError', 'SecurityError'].includes(error.name)
         ? '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.' : error.message);
     }
@@ -169,9 +214,17 @@ export class VoiceController {
     if (this.state.phase !== 'recording') return;
     this.clearTimer(session.timer);
     this.update({ phase: 'transcribing', message: '언어를 감지하고 곡을 찾고 있습니다.' });
-    session.timer = this.setTimer(() => this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.'), 5000);
-    try { session.recorder.stop(); } catch { this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.'); }
-    this.stopTracks(session);
+    const stream = session.stream;
+    session.timer = this.setTimer(() => {
+      if (!this.current(session)) return;
+      this.discardMicrophone(stream);
+      this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
+    }, 5000);
+    try { session.recorder.stop(); } catch {
+      this.discardMicrophone(session.stream);
+      this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
+    }
+    this.parkMicrophone(session);
   }
   async process(session) {
     try {

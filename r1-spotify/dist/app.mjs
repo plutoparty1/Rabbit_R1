@@ -1,11 +1,11 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r27';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r27';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r27';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r27';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r27';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r28';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r28';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r28';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r28';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r28';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r27';
+import { setupPairing } from './pair-device.mjs?v=20261025-r28';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -467,6 +467,7 @@ for (const input of modeInputs) {
   input.checked = input.value === getSessionMode();
   input.onchange = async () => {
     closeVoice();
+    voiceController?.releaseMicrophone();
     $('connect').disabled = true; $('restore-client-id').hidden = true;
     try {
       // Disconnect before changing policy; never promote a temporary login to persistent storage.
@@ -492,6 +493,7 @@ $('connect-form').onsubmit = async event => {
 };
 $('disconnect').onclick = async () => {
   closeVoice();
+  voiceController?.releaseMicrophone();
   revision++; lyricRevision++; clearTimeout(pollTimer);
   try { await client.disconnect(); player = normalizePlayer(null); stale = false; lines = []; render(); $('disconnect').hidden = true; $('auth-message').textContent = t('이 기기의 연결이 해제되었습니다.'); }
   catch { $('auth-message').textContent = t('저장소 접근에 실패했습니다. 다시 시도해 주세요.'); }
@@ -500,6 +502,7 @@ $('disconnect').onclick = async () => {
 function suspend() {
   suspended = true; revision++; lyricRevision++;
   closeVoice(); clearTimeout(longPressReset); longPressed = false;
+  voiceController?.releaseMicrophone();
   for (const timer of [pollTimer, volumeTimer, resumeTimer, viewportTimer]) clearTimeout(timer);
   pollTimer = null; volumeTarget = null; gesture = null; lyricGesture = null;
 }

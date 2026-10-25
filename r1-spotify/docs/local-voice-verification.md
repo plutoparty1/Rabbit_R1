@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r27`; diagnostics: `20261025-r26-test`. Desktop timing rows below are historical r25 measurements.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r28`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,26 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r28 microphone reuse / 마이크 연결 재사용
+
+The player's previous “Preparing microphone” phase reopened `getUserMedia()` for every hold and stopped the stream after every release. That phase was not a 65 MB model download. r28 acquires the microphone only on the first user hold, retains its healthy connection while the app is in the foreground, and sets audio tracks to `enabled = false` between recordings. Each hold creates a fresh recorder and enables audio; release or cancellation stops recording and mutes the retained connection. Ordinary voice-panel closure retains it. Hiding/leaving the page, disconnecting Spotify, or changing session mode stops all tracks and invalidates pending permission requests; resuming does not acquire the microphone until the next hold. Ended tracks and recorder failures cause reacquisition on retry. The browser may retain its microphone indicator for the muted connection. The separate diagnostic page is unchanged.
+
+이전 재생 화면은 버튼을 누를 때마다 마이크를 다시 열고 놓을 때 연결을 종료했습니다. 이때 표시한 “마이크를 준비하고 있습니다”는 모델 다운로드 안내가 아닙니다. r28은 첫 누름에서 허용받은 연결을 전면 실행 중 재사용하며 대기 중에는 음소거하고 누른 동안만 녹음합니다. 음성 창을 닫아도 연결은 유지하지만, 앱 숨김·페이지 이탈·Spotify 연결 해제·세션 모드 변경 시 종료합니다. 다시 돌아온 뒤에는 다음 누름에서 재연결합니다. 연결 유지 중에는 브라우저의 마이크 표시가 남을 수 있습니다. 별도 진단 화면에는 이 변경을 적용하지 않았습니다.
+
+Validation: **159 automated tests passed**. Korean/English player browser checks at 240×282 and 240×240 verified three consecutive holds with one microphone request, muted tracks with no recorder running between holds, reuse after closing the voice panel, explicit release on lifecycle changes, and rejection of permission results arriving after the page was hidden. Mocked Spotify playback succeeded three times per locale with zero audio uploads and zero browser errors. These tests exercise real controller/UI code with controlled microphone/model/Spotify responses; r1 warm-start latency still requires device testing.
+
+The pinned Transformers.js 3.8.1 library already enables browser caching when Cache API is available; no cache setting was changed. A separate desktop Edge check executed the real pinned model:
+
+| State | Observed preparation time | Model network requests |
+| --- | --- | --- |
+| First preparation in a new browser context | 7,943 ms | Downloaded |
+| Reusing the ready model on the same page | 0 ms | 0 |
+| New worker after page reload, with the same cache | 2,502 ms | 0 |
+
+`transformers-cache` held seven model/tokenizer/configuration files totaling 43,622,127 bytes, including 40,852,675 bytes of model weights. The roughly 65 MB initial estimate also includes WASM runtime and JavaScript. CDN runtime requests were observed after reload; this check does not establish whether those used the HTTP cache. Same-page model reuse is immediate when ready; a reload still incurs initialization even with cached weights. WebView storage isolation, cache clearing/eviction, or a model change can require downloading again. These are single desktop measurements, not r1 timings or guarantees. Raw speech recognition accuracy is unchanged.
+
+실제 모델로 진행한 PC 시험에서는 같은 페이지의 재사용 시 추가 요청이 없었고, 새로고침 뒤에도 모델 파일의 네트워크 요청은 없었습니다. 다만 캐시가 있어도 메모리 초기화 시간은 남습니다. WebView 캐시 삭제·자동 정리·모델 변경 시 재다운로드할 수 있으며, 이 시간은 래빗 실측값이 아닙니다. 이번 변경은 음성 받아쓰기 정확도를 바꾸지 않습니다.
 
 ## r27 direct search / 직접 검색
 
@@ -69,6 +89,10 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
+For the main player, open `?v=20261025-r28`, allow the microphone on the first hold, and complete two more hold/speak/release requests without leaving the app. The second and third holds should skip reopening a healthy microphone. Close/reopen the voice panel to confirm reuse, then leave and return to confirm the next hold reconnects. Record microphone-start and post-release recognition delays separately. / 재생 화면 r28에서 첫 마이크 접근을 허용하고 앱을 나가지 않은 채 두 번 더 누르고 말한 뒤 놓습니다. 두 번째부터는 정상 마이크 연결을 다시 열지 않아야 합니다. 음성 창만 닫았을 때는 유지하고 앱을 나갔다 오면 다음 누름에서 재연결하는지 확인합니다. 녹음 시작 대기와 놓은 뒤 인식 대기를 구분합니다.
+
+The separate diagnostic flow remains:
+
 1. Open the updated diagnostic page and confirm `r26-test`. / 새 진단 페이지에서 `r26-test`를 확인합니다.
 2. Keep local Whisper selected, press **음성 인식 준비**, and wait until ready. / 로컬 Whisper에서 준비를 누르고 완료될 때까지 기다립니다.
 3. Hold the screen or side button, speak for 3–5 seconds, release, and check the transcript. / 버튼을 누른 채 3~5초 말하고 놓은 뒤 문장을 확인합니다.
@@ -79,6 +103,7 @@ A successful transcript establishes only the tested device/language/request. Con
 ## Alternatives and sources / 대안과 근거
 
 - [Transformers.js pipeline documentation](https://huggingface.co/docs/transformers.js/v3.8.1/en/pipelines) and [pinned model files](https://huggingface.co/Xenova/whisper-tiny/tree/5332fcc35e32a33b86612b9a57a89be7906102b1): selected implementation, running locally in the browser.
+- [Pinned cache defaults](https://github.com/huggingface/transformers.js/blob/3.8.1/src/env.js) and [cache lookup implementation](https://github.com/huggingface/transformers.js/blob/3.8.1/src/utils/hub.js): browser model-file reuse when Cache API is available.
 - [Whisper language detection source](https://github.com/openai/whisper/blob/main/whisper/decoding.py): first-token classification over language tokens, followed by same-language transcription.
 - [ONNX Runtime browser support](https://onnxruntime.ai/docs/get-started/with-javascript/web.html#supported-versions) and [thread configuration](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html): Android Chrome/Edge WASM support and single-thread operation without cross-origin-isolated threading. This is not an r1 certification.
 - [Rabbit Creation text bridge](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md): documented text AI integration; no invented native audio API.

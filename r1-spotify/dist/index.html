@@ -8,7 +8,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: https://i.scdn.co; connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://lrclib.net https://api.lyrics.ovh https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>R1 Spotify</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101211'/%3E%3Cpath d='M12 7v18M20 7v18' stroke='%231ed760' stroke-width='5'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./style.css?v=20261025-r27">
+  <link rel="stylesheet" href="./style.css?v=20261025-r28">
 </head>
 <body>
   <!-- 작은 화면에서도 아트와 곡 정보를 함께 확인할 수 있도록 구성합니다. -->
@@ -51,9 +51,9 @@
       <p>로그인 후 같은 Spotify 계정의 휴대폰·PC·스피커에서 음악을 재생해 주세요.</p>
       <details><summary>권한 오류가 나면?</summary><p>본인 Spotify 앱의 Users Management에서 로그인할 계정이 허용되어 있는지 확인합니다. 필요하면 Add new user에 본인 이름과 Spotify 이메일을 등록합니다. Premium과 재생 기기 제한도 확인해 주세요.</p></details>
       <details><summary>조작 안내</summary><p>앨범아트 왼쪽으로 밀기: 다음 곡<br>앨범아트 오른쪽으로 밀기: 이전 곡<br>래빗 버튼 한 번: 재생·일시정지<br>앨범아트 누르기: 가사<br>재생 화면 휠 위/아래: 볼륨 +5%/-5%<br>가사·설정 화면 휠: 탐색<br>가사 화면 좌우로 밀기: 재생 화면</p><p>‘현재 가사 따라가기’를 체크하면 재생 위치로 이동하고, 해제하면 자유롭게 탐색할 수 있습니다. 휠·터치 탐색 시 체크가 해제됩니다. 서버에 Spotify 가사 연결을 설정했다면 기본 가사를 먼저 확인하고, 없으면 외부 제공처를 조회합니다. 한국어는 벅스를 우선하고, 다른 언어는 LRCLIB을 우선합니다. 가사는 원문으로 표시하며 시간 정보가 있는 곡만 따라갑니다.</p></details>
-      <details><summary>음성 검색</summary><p>재생 화면에서 래빗 버튼을 길게 누르고 가수와 곡명을 말한 뒤 놓으세요. 언어는 자동 감지합니다.</p><p>Whisper가 기기에서 음성을 인식하고 Spotify에서 곡을 직접 검색합니다. 곡 정보가 불확실하면 후보에서 선택합니다.</p><p>처음 사용할 때 마이크 권한을 허용해 주세요. 음성 기능은 자동으로 준비되며 API 키는 필요하지 않습니다.</p></details>
+      <details><summary>음성 검색</summary><p>재생 화면에서 래빗 버튼을 길게 누르고 가수와 곡명을 말한 뒤 놓으세요. 언어는 자동 감지합니다.</p><p>Whisper가 기기에서 음성을 인식하고 Spotify에서 곡을 직접 검색합니다. 곡 정보가 불확실하면 후보에서 선택합니다.</p><p>첫 사용 시 마이크 권한을 허용해 주세요. 이후 마이크 연결을 재사용하며 버튼을 누를 때만 녹음합니다. 앱을 떠나거나 연결을 해제하면 마이크 연결도 닫습니다.</p><p>모델과 실행 파일 약 65MB는 처음 내려받습니다. 준비된 모델과 저장된 파일을 재사용하므로 말할 때마다 다시 내려받지 않습니다. API 키는 필요하지 않습니다.</p></details>
       <details><summary>기기 확인</summary><p id="volume-support">재생 기기 정보를 기다리고 있습니다.</p><p id="input-status">휠 입력을 기다리고 있습니다.</p><p id="viewport-status"></p><p id="storage-status">로그인 유지 상태를 확인하고 있습니다.</p></details>
-      <p class="fine">버전 20261025-r27 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.</p>
+      <p class="fine">버전 20261025-r28 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.</p>
     </section>
     <section id="pair-view" class="view settings" hidden>
       <header><h2>휴대폰으로 설정</h2><button id="pair-back" class="icon" type="button">닫기</button></header>
@@ -73,11 +73,11 @@
         <p id="voice-state" role="status" aria-live="polite">버튼을 누른 채 말하고 놓으세요.</p>
         <p id="voice-transcript" hidden></p><p id="voice-language"></p>
         <div id="voice-results"></div>
-        <p id="voice-notice">우측 물리 버튼을 누른 채 말하고 놓으세요. 처음에는 약 65MB를 자동으로 내려받습니다. 음성은 기기에서 처리하고 Spotify에서 곡을 검색합니다.</p>
+        <p id="voice-notice">우측 버튼을 누른 채 말하고 놓으세요. 마이크 연결은 재사용하고 버튼을 누를 때만 녹음합니다. 처음 내려받은 음성 모델도 재사용합니다.</p>
       </div>
       <button id="voice-record" type="button" aria-pressed="false">누르고 말하기</button>
     </section>
   </main>
-  <script type="module" src="./app.mjs?v=20261025-r27"></script>
+  <script type="module" src="./app.mjs?v=20261025-r28"></script>
 </body>
 </html>

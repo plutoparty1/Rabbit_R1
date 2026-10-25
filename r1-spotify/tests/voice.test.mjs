@@ -8,10 +8,14 @@ const song = (id = 'a', name = '밤편지', artist = '아이유') => ({ id: id.r
 function fixture(options = {}) {
   const calls = [], timers = new Map(), changes = [], recorders = [];
   let stopped = 0, captures = 0, timerId = 0;
-  const stream = { getTracks: () => [{ stop() { stopped++; } }] };
+  const makeStream = () => {
+    const track = { kind: 'audio', enabled: true, readyState: 'live', stop() { stopped++; this.readyState = 'ended'; } };
+    return { get active() { return track.readyState === 'live'; }, getTracks: () => [track], getAudioTracks: () => [track] };
+  };
+  const stream = makeStream();
   class Recorder {
     static isTypeSupported(type) { return type === 'audio/webm;codecs=opus'; }
-    constructor(_stream, config) { this.state = 'inactive'; this.mimeType = config.mimeType; recorders.push(this); }
+    constructor(stream, config) { this.stream = stream; this.state = 'inactive'; this.mimeType = config.mimeType; recorders.push(this); }
     start() { this.state = 'recording'; }
     stop() {
       this.state = 'inactive';
@@ -26,7 +30,7 @@ function fixture(options = {}) {
   };
   const controller = new VoiceController({ client,
     onChange(state) { changes.push(state); },
-    mediaDevices: { getUserMedia: () => { captures++; return options.permission || Promise.resolve(stream); } },
+    mediaDevices: { getUserMedia: () => { captures++; return options.permission || Promise.resolve(captures === 1 ? stream : makeStream()); } },
     Recorder, deviceId: () => 'test-device',
     fetcher: async (url, init) => {
       calls.push([url, init]);
@@ -38,7 +42,7 @@ function fixture(options = {}) {
     clearTimer: id => timers.delete(id),
     ...options.controller,
   });
-  return { controller, calls, timers, recorders, changes, stream, stopped: () => stopped, captures: () => captures,
+  return { controller, calls, timers, recorders, changes, stream, makeStream, stopped: () => stopped, captures: () => captures,
     fire(ms) { for (const [id, timer] of timers) if (timer.ms === ms) { timers.delete(id); timer.fn(); return; } throw new Error('No timer for ' + ms); },
   };
 }
@@ -47,7 +51,7 @@ async function submit(f) { await f.controller.begin(); f.controller.release(); f
 test('no capture before input; release sends authorized audio then one exact playback', async () => {
   const f = fixture(); assert.equal(f.captures(), 0); assert.equal(f.calls.length, 0);
   await submit(f);
-  assert.equal(f.stopped(), 1);
+  assert.equal(f.stopped(), 0); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
   const upload = f.calls.find(call => call[0] === '/api/voice/search')[1];
   assert.equal(upload.headers.Authorization, 'Bearer mock-token');
   assert.deepEqual(JSON.parse(upload.body), { audio: 'YXVkaW8=', mimeType: 'audio/webm;codecs=opus' });
@@ -68,9 +72,9 @@ test('release while permission is pending stops the eventual stream and never re
   assert.equal(f.controller.active, false); assert.equal(f.timers.size, 0);
 });
 
-test('cancel during recorder activity discards the final chunk and releases microphone', async () => {
+test('cancel during recorder activity discards the final chunk and keeps microphone muted', async () => {
   const f = fixture(); await f.controller.begin(); f.controller.cancel(); await tick();
-  assert.equal(f.stopped(), 1);
+  assert.equal(f.stopped(), 0); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
   assert.equal(f.calls.filter(call => call[0] === '/api/voice/search').length, 0);
   assert.equal(f.controller.state.phase, 'idle'); assert.equal(f.timers.size, 0);
 });
@@ -102,7 +106,7 @@ test('maximum duration stops and submits once even if physical release arrives l
   assert.equal([...f.timers.values()].some(timer => timer.ms === 15000), false);
   f.fire(MAX_RECORDING_MS); for (let i = 0; i < 6; i++) await tick();
   f.controller.release(); await tick();
-  assert.equal(f.stopped(), 1);
+  assert.equal(f.stopped(), 0); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
   assert.equal(f.calls.filter(call => call[0] === '/api/voice/search').length, 1);
   assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
 });
@@ -111,7 +115,8 @@ test('recording size limit stops without uploading', async () => {
   const f = fixture({ controller: { maxBytes: 3 } });
   await f.controller.begin();
   f.recorders[0].ondataavailable({ data: new Blob(['1234']) }); await tick();
-  assert.equal(f.controller.state.phase, 'error'); assert.equal(f.stopped(), 1);
+  assert.equal(f.controller.state.phase, 'error'); assert.equal(f.stopped(), 0);
+  assert.equal(f.stream.getAudioTracks()[0].enabled, false);
   assert.equal(f.calls.filter(call => call[0] === '/api/voice/search').length, 0);
   assert.equal(f.timers.size, 0);
 });
@@ -201,7 +206,8 @@ test('cold first hold records immediately while model loads, then processes afte
   assert.equal(f.captures(), 1); assert.equal(f.controller.state.phase, 'recording');
   assert.equal(f.recognizer.ready, false); assert.equal(f.calls.length, 0);
   f.controller.release(); await tick();
-  assert.equal(f.stopped(), 1); assert.equal(f.controller.state.phase, 'transcribing');
+  assert.equal(f.stopped(), 0); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+  assert.equal(f.controller.state.phase, 'transcribing');
   assert.match(f.controller.state.message, /녹음은 완료/);
   assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
   f.recognizer.ready = true; model.resolve();
@@ -216,7 +222,7 @@ test('closing a cold recording or idle panel preserves background preparation', 
   const f = keylessFixture({ recognizer: { ready: false, prepare: () => model.promise } });
   f.controller.cancel();
   await f.controller.begin(); f.controller.cancel(); await tick();
-  assert.equal(f.stopped(), 1); assert.equal(f.calls.length, 0);
+  assert.equal(f.stopped(), 0); assert.equal(f.stream.getAudioTracks()[0].enabled, false); assert.equal(f.calls.length, 0);
   assert.equal(f.localCalls.some(call => call[0].startsWith('cancel')), false);
   model.resolve(); await tick();
   assert.equal(f.controller.state.phase, 'idle');
@@ -225,9 +231,142 @@ test('closing a cold recording or idle panel preserves background preparation', 
 test('warm successive holds reuse the model and do not cancel it on success or idle close', async () => {
   const f = keylessFixture();
   await submit(f); f.controller.cancel(); await submit(f);
-  assert.equal(f.captures(), 2); assert.equal(f.stopped(), 2);
+  assert.equal(f.captures(), 1); assert.equal(f.stopped(), 0);
   assert.equal(f.calls.filter(call => call[0] === 'play').length, 2);
   assert.equal(f.localCalls.some(call => call[0].startsWith('cancel')), false);
+});
+
+test('three holds reuse one microphone, unmute only while recording, and keep audio separate', async () => {
+  const f = keylessFixture(), track = f.stream.getAudioTracks()[0];
+  assert.equal(f.captures(), 0); assert.equal(f.controller.microphoneReady, false);
+  for (let hold = 1; hold <= 3; hold++) {
+    await f.controller.begin();
+    assert.equal(f.controller.state.phase, 'recording');
+    assert.equal(f.controller.microphoneReady, true); assert.equal(track.enabled, true);
+    assert.equal(f.recorders[hold - 1].stream, f.stream);
+    f.recorders[hold - 1].ondataavailable({ data: new Blob([`hold${hold}`]) });
+    f.controller.release();
+    assert.equal(track.enabled, false); assert.equal(track.readyState, 'live');
+    for (let i = 0; i < 6; i++) await tick();
+    assert.equal(f.controller.state.phase, 'done'); assert.equal(track.enabled, false);
+    f.controller.cancel();
+    assert.equal(f.controller.microphoneReady, true); assert.equal(track.enabled, false);
+  }
+  assert.equal(f.captures(), 1); assert.equal(f.stopped(), 0); assert.equal(f.recorders.length, 3);
+  const audio = await Promise.all(f.localCalls.filter(call => call[0] === 'audio').map(call => call[1].text()));
+  assert.deepEqual(audio, ['hold1audio', 'hold2audio', 'hold3audio']);
+});
+
+test('closing a recording immediately allows a new hold without carrying discarded audio', async () => {
+  const f = keylessFixture(), track = f.stream.getAudioTracks()[0];
+  await f.controller.begin();
+  f.recorders[0].ondataavailable({ data: new Blob(['discarded']) });
+  f.controller.cancel();
+  assert.equal(track.enabled, false); assert.equal(f.controller.microphoneReady, true);
+  await f.controller.begin();
+  assert.equal(track.enabled, true); assert.equal(f.captures(), 1);
+  await tick();
+  assert.equal(track.enabled, true); assert.equal(f.controller.state.phase, 'recording');
+  f.controller.release();
+  for (let i = 0; i < 6; i++) await tick();
+  const audio = f.localCalls.filter(call => call[0] === 'audio');
+  assert.equal(audio.length, 1); assert.equal(await audio[0][1].text(), 'audio');
+});
+
+test('an ended microphone is replaced on the next hold without reopening it in the background', async () => {
+  const f = keylessFixture();
+  await f.controller.begin(); f.controller.cancel();
+  f.stream.getAudioTracks()[0].readyState = 'ended';
+  assert.equal(f.controller.microphoneReady, false); assert.equal(f.captures(), 1);
+  await f.controller.begin();
+  assert.equal(f.captures(), 2); assert.equal(f.controller.microphoneReady, true);
+  assert.notEqual(f.recorders[1].stream, f.stream);
+  assert.equal(f.recorders[1].stream.getAudioTracks()[0].enabled, true);
+  f.controller.cancel();
+  assert.equal(f.recorders[1].stream.getAudioTracks()[0].enabled, false);
+});
+
+test('releasing the microphone closes idle and active capture and only a later hold reacquires it', async () => {
+  const f = keylessFixture();
+  await submit(f); f.controller.releaseMicrophone();
+  assert.equal(f.controller.microphoneReady, false); assert.equal(f.stopped(), 1);
+  assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+  await tick(); assert.equal(f.captures(), 1);
+  await f.controller.begin();
+  assert.equal(f.captures(), 2); assert.equal(f.controller.state.phase, 'recording');
+  f.controller.releaseMicrophone(); await tick();
+  assert.equal(f.stopped(), 2); assert.equal(f.controller.microphoneReady, false);
+  assert.equal(f.controller.active, false); assert.equal(f.timers.size, 0);
+  assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 1);
+});
+
+test('releasing the microphone discards a late permission grant even after the panel was already closed', async () => {
+  for (const alreadyClosed of [false, true]) {
+    const permission = deferred(), f = keylessFixture({ fixture: { permission: permission.promise } });
+    const start = f.controller.begin(); await tick();
+    if (alreadyClosed) f.controller.cancel();
+    f.controller.releaseMicrophone();
+    permission.resolve(f.stream); await start;
+    assert.equal(f.stopped(), 1); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+    assert.equal(f.controller.microphoneReady, false); assert.equal(f.controller.active, false);
+    assert.equal(f.recorders.length, 0); assert.equal(f.timers.size, 0);
+    assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 0);
+  }
+});
+
+test('a permission grant from before teardown cannot disturb a newer recording', async () => {
+  const pending = deferred(), f = keylessFixture();
+  let captures = 0;
+  const nextStream = f.makeStream();
+  f.controller.mediaDevices = { getUserMedia: () => ++captures === 1 ? pending.promise : Promise.resolve(nextStream) };
+  const oldStart = f.controller.begin(); await tick();
+  f.controller.releaseMicrophone(); await f.controller.begin();
+  pending.resolve(f.stream); await oldStart;
+  assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended');
+  assert.equal(nextStream.getAudioTracks()[0].enabled, true);
+  assert.equal(f.controller.microphoneReady, true); assert.equal(f.controller.state.phase, 'recording');
+  f.controller.releaseMicrophone();
+});
+
+test('recorder construction and device failures invalidate capture so retry can reacquire', async () => {
+  const f = keylessFixture(), GoodRecorder = f.controller.Recorder;
+  f.controller.Recorder = class { constructor() { throw new Error('Recorder failed'); } };
+  await f.controller.begin();
+  assert.equal(f.controller.state.phase, 'error'); assert.equal(f.controller.microphoneReady, false);
+  assert.equal(f.stopped(), 1); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+  f.controller.Recorder = GoodRecorder;
+  await f.controller.begin();
+  assert.equal(f.captures(), 2); assert.equal(f.controller.microphoneReady, true);
+  f.recorders[0].onerror(); await tick();
+  assert.equal(f.stopped(), 2); assert.equal(f.controller.microphoneReady, false);
+  assert.equal(f.controller.state.phase, 'error');
+  await f.controller.begin();
+  assert.equal(f.captures(), 3); assert.equal(f.controller.state.phase, 'recording');
+  f.controller.releaseMicrophone();
+});
+
+test('recorder start and stop failures never leave a live microphone cached', async () => {
+  for (const operation of ['start', 'release', 'cancel', 'stop-timeout']) {
+    const f = keylessFixture(), GoodRecorder = f.controller.Recorder;
+    if (operation === 'start') f.controller.Recorder = class extends GoodRecorder { start() { throw new Error('Start failed'); } };
+    await f.controller.begin();
+    if (operation === 'stop-timeout') {
+      f.recorders[0].stop = function () { this.state = 'inactive'; };
+      f.controller.release();
+      assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+      f.fire(5000);
+    } else if (operation !== 'start') {
+      f.recorders[0].stop = () => { throw new Error('Stop failed'); };
+      f.controller[operation]();
+    }
+    assert.equal(f.stopped(), 1, operation); assert.equal(f.controller.microphoneReady, false, operation);
+    assert.equal(f.controller.active, false, operation); assert.equal(f.timers.size, 0, operation);
+    assert.equal(f.stream.getAudioTracks()[0].enabled, false, operation);
+    f.controller.Recorder = GoodRecorder;
+    await f.controller.begin();
+    assert.equal(f.captures(), 2, operation); assert.equal(f.controller.state.phase, 'recording', operation);
+    f.controller.releaseMicrophone();
+  }
 });
 
 test('cancel after release while the cold model is loading ignores its eventual result', async () => {

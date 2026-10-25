@@ -135,7 +135,7 @@ Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls
 
 ### Test on r1 without an API key
 
-The r27 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet; later reuse depends on the WebView's cache. This is browser-based local inference, not access to Rabbit's native speech recognizer.
+The r28 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet. The loaded model stays in memory across successful requests, and model files use the browser cache when available. They are not downloaded on every hold. Reloading still requires model initialization; a cleared or evicted cache, a changed model, or a new WebView storage context can require another download. This is browser-based local inference, not access to Rabbit's native speech recognizer.
 
 Open the [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html?v=20261025-r26-test) from **Test rabbit voice without an API key** in the Creation's connection settings. It needs **no Spotify login**. Check the `20261025-r26-test` label, then:
 
@@ -154,7 +154,9 @@ The user reported Rabbit AI connection success, a Web Speech timeout and a 20,26
 2. **Hold the side button on the player, speak, and release.** Recording starts without a separate preparation step. If the first download is still running, only analysis waits after recording; the on-screen recording button also works.
 3. Local Whisper detects the language and transcribes. Explicit patterns such as ‘play title by artist’ are parsed immediately; other phrasing becomes a conservative Spotify text query, with obvious play-command words removed. Rabbit AI is not called by the player. Spotify plays a unique exact title-and-artist match. Unstructured text searches, uncertain parsing and artist-catalog recovery require choosing a candidate.
 
-r27 retains r26’s shared audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
+r28 reuses the microphone connection after the first allowed hold while the app remains in the foreground. Between recordings, its audio tracks are muted; recording runs only while the button is held. Ordinary cancellation or closing the voice panel keeps this muted connection ready. Leaving or hiding the page, disconnecting Spotify, or changing session mode releases it; the next hold opens it again. A stopped device track is also reopened. The browser may continue showing its microphone indicator while the muted connection is retained. “Preparing microphone” refers to opening this connection, not downloading the model. This reuse applies to the main player; the separate diagnostic page still releases its microphone after each test.
+
+r28 retains r26’s shared audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
 
 Try **“아이유의 밤편지 틀어줘”** or **“Play Yesterday by The Beatles.”** The model is instructed to transcribe rather than translate. Small models can mishear names, short utterances and mixed-language requests; inspect the displayed text and candidates. Recording ends on release. The former 15-second limit is replaced by a 60-second/2 MiB safety ceiling for a stuck button. Cancel, hide/page exit, screen changes or disconnect invalidate pending work.
 
@@ -325,7 +327,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; r1 recording decode, local Whisper speed/accuracy and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r27`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r28`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 
