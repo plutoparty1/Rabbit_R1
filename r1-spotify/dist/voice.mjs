@@ -1,5 +1,8 @@
+import { parseSongRequest } from './song-request.mjs?v=20261025-r26';
+
 // One push-to-talk session owns every recorder, stream and asynchronous result.
-export const MAX_RECORDING_MS = 15000;
+// Safety stop for a missing button-release event, not a normal speaking deadline.
+export const MAX_RECORDING_MS = 60000;
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 const serverMessages = {
@@ -20,15 +23,15 @@ const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCa
 // Keep public errors actionable without exposing model/runtime diagnostics.
 export function keylessVoiceMessage(error) {
   const code = error?.code || error?.message;
-  if (['model_load_failed', 'local_model_timeout', 'local_worker_failed'].includes(code)) return '음성 모델을 준비하지 못했습니다. Wi-Fi를 확인하고 음성 인식 준비를 다시 눌러 주세요.';
-  if (code === 'local_not_ready') return '먼저 음성 인식 준비를 누르고 준비 완료를 기다려 주세요.';
-  if (code === 'local_transcription_timeout') return '이 기기의 음성 처리 시간이 초과되었습니다. 3~5초 정도로 짧게 말해 주세요.';
-  if (['decode_failed', 'invalid_audio', 'empty_audio', 'transcription_failed', 'no_speech'].includes(code)) return '녹음에서 말을 인식하지 못했습니다. 3~5초 정도로 가수와 곡명을 다시 말해 주세요.';
+  if (['model_load_failed', 'local_model_timeout', 'local_worker_failed'].includes(code)) return '음성 모델을 준비하지 못했습니다. Wi-Fi를 확인하고 다시 시도해 주세요.';
+  if (code === 'local_not_ready') return '음성 기능을 준비하고 있습니다. 녹음 후 자동으로 처리합니다.';
+  if (code === 'local_transcription_timeout') return '이 기기의 음성 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+  if (['decode_failed', 'invalid_audio', 'empty_audio', 'transcription_failed', 'no_speech'].includes(code)) return '녹음에서 말을 인식하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
   if (['audio_too_large', 'audio_too_long'].includes(code)) return '녹음이 너무 깁니다. 가수와 곡명만 짧게 말해 주세요.';
   if (['rabbit_no_response', 'rabbit_unmatched_response', 'bridge_failed', 'invalid_response', 'invalid_text'].includes(code)) return '래빗 AI에서 곡 정보를 확인하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
   if (code === 'unsupported') return '이 기기에서 음성 모델을 실행할 수 없습니다. 래빗 Creation에서 다시 열어 주세요.';
   if (code === 'cancelled') return '음성 요청이 취소되었습니다.';
-  return '기기 내 음성 인식을 완료하지 못했습니다. 음성 인식 준비를 확인하고 다시 시도해 주세요.';
+  return '기기 내 음성 인식을 완료하지 못했습니다. 다시 시도해 주세요.';
 }
 
 // Audio remains in LocalSpeechProbe. Only its transcript enters Rabbit's text bridge.
@@ -41,6 +44,7 @@ export function createKeylessTranscriber(recognizer, rabbit) {
     get unavailableMessage() {
       return !rabbit.supported ? '래빗 Creation에서 음성 검색을 열어 주세요.' : keylessVoiceMessage({ code: 'unsupported' });
     },
+    prepare() { return recognizer.prepare(); },
     cancel,
     async recognize(blob, { signal, onTranscript = () => {} } = {}) {
       if (signal?.aborted) throw cancelled();
@@ -50,9 +54,11 @@ export function createKeylessTranscriber(recognizer, rabbit) {
         if (signal?.aborted) throw cancelled();
         onTranscript(speech.transcript, speech.lang);
         if (signal?.aborted) throw cancelled();
-        const song = await rabbit.request(speech.transcript);
+        // Common commands do not need a second AI round trip after transcription.
+        const parsed = parseSongRequest(speech.transcript);
+        const song = parsed || await rabbit.request(speech.transcript);
         if (signal?.aborted) throw cancelled();
-        return { transcript: speech.transcript, language: speech.lang, artist: song.artist, title: song.title };
+        return { transcript: speech.transcript, language: speech.lang, artist: song.artist, title: song.title, requiresConfirmation: Boolean(song.requiresConfirmation) };
       } finally { signal?.removeEventListener('abort', cancel); }
     },
   };
@@ -88,13 +94,12 @@ export class VoiceController {
     }
     this.stopTracks(session);
     session.chunks = [];
-    this.transcriber?.cancel?.();
+    if (session.processing) this.transcriber?.cancel?.();
   }
   cancel() {
     const previous = this.session;
     this.session = null;
     if (previous) this.cleanup(previous);
-    else this.transcriber?.cancel?.();
     this.update({ phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] });
   }
   fail(session, message) {
@@ -122,7 +127,8 @@ export class VoiceController {
       if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('이 브라우저에서 녹음을 지원하지 않습니다. HTTPS와 마이크 권한을 확인해 주세요.');
       if (this.transcriber) {
         if (!this.transcriber.supported) throw new Error(this.transcriber.unavailableMessage || '래빗 Creation에서 음성 검색을 열어 주세요.');
-        if (!this.transcriber.ready) throw new Error('먼저 음성 인식 준비를 누르고 준비 완료를 기다려 주세요.');
+        // Load in parallel; a cold model must not delay microphone permission/capture.
+        Promise.resolve(this.transcriber.prepare?.()).catch(() => {});
       } else {
         const config = await this.request('/api/voice/config', {}, session, 10000);
         if (!this.current(session)) return;
@@ -150,7 +156,7 @@ export class VoiceController {
       };
       session.recorder.start(250);
       session.timer = this.setTimer(() => this.release(), this.maxDuration);
-      this.update({ phase: 'recording', message: '듣고 있습니다. 놓으면 검색합니다. · 최대 15초' });
+      this.update({ phase: 'recording', message: '듣고 있습니다. 놓으면 검색합니다.' });
     } catch (error) {
       if (this.current(session)) this.fail(session, ['NotAllowedError', 'SecurityError'].includes(error.name)
         ? '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.' : error.message);
@@ -177,15 +183,17 @@ export class VoiceController {
       if (blob.size > this.maxBytes) throw new Error('녹음 크기가 너무 큽니다. 더 짧게 말해 주세요.');
       let result;
       if (this.transcriber) {
-        this.update({ message: '기기에서 음성을 글자로 바꾸고 있습니다. 잠시 기다려 주세요.' });
+        session.processing = true;
+        this.update({ message: this.transcriber.ready ? '기기에서 음성을 글자로 바꾸고 있습니다. 잠시 기다려 주세요.' : '음성 기능을 처음 준비하고 있습니다. 녹음은 완료했습니다.' });
         try {
           result = await this.transcriber.recognize(blob, {
             signal: session.abort.signal,
             onTranscript: (transcript, language) => {
-              if (this.current(session)) this.update({ phase: 'analyzing', message: '래빗 AI에서 가수와 곡명을 확인하고 있습니다.', transcript, language });
+              if (this.current(session)) this.update({ phase: 'analyzing', message: '곡 정보를 확인하고 있습니다.', transcript, language });
             },
           });
         } catch (error) { throw new Error(keylessVoiceMessage(error)); }
+        finally { session.processing = false; }
       } else {
         const bytes = new Uint8Array(await blob.arrayBuffer());
         if (!this.current(session)) return;
@@ -210,10 +218,11 @@ export class VoiceController {
         seen.add(track.uri); return true;
       });
       const exact = exactVoiceTrack(tracks, session.request);
-      if (exact) { await this.play(session, exact); return; }
+      const recovered = Boolean(result.requiresConfirmation) || tracks.some(track => track.voiceRecovery);
+      if (exact && !recovered) { await this.play(session, exact); return; }
       if (!tracks.length) throw new Error('검색 결과가 없습니다. 가수와 곡명을 다시 말해 주세요.');
       session.tracks = tracks.slice(0, 5);
-      this.update({ phase: 'choosing', message: '재생할 곡을 선택해 주세요.', tracks: session.tracks });
+      this.update({ phase: 'choosing', message: recovered ? '곡명을 정확히 확인하지 못했습니다. 후보에서 선택해 주세요.' : '재생할 곡을 선택해 주세요.', tracks: session.tracks });
     } catch (error) { if (this.current(session)) this.fail(session, error.message); }
   }
   async choose(uri) {

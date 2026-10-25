@@ -1,8 +1,8 @@
-import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r25-test';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r25';
+import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r26-test';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r26';
 
 const $ = id => document.getElementById(id);
-const VERSION = '20261025-r25-test';
+const VERSION = '20261025-r26-test';
 const counts = { hardware: { longPressStart: 0, longPressEnd: 0, sideClick: 0, scrollUp: 0, scrollDown: 0 }, screen: { press: 0, release: 0, cancel: 0 } };
 const fresh = () => ({ state: 'not-run', code: '', attempts: 0, durationMs: 0, outputChars: 0, eventCounts: {}, timeline: [] });
 const results = { rabbit: fresh(), model: fresh(), speech: fresh(), microphone: fresh(), analysis: fresh() };
@@ -43,7 +43,7 @@ const errors = {
   local_worker_failed: '기기에서 Whisper 실행을 중단했습니다. 준비를 다시 눌러 주세요.',
   microphone_timeout: '마이크 권한 응답을 받지 못했습니다. 권한을 허용한 뒤 다시 말해 주세요.',
   stop_timeout: '녹음 종료 응답을 받지 못했습니다.',
-  audio_too_large: '녹음이 너무 큽니다. 짧게 다시 말해 주세요.', audio_too_long: '녹음이 너무 깁니다. 15초 안으로 다시 말해 주세요.',
+  audio_too_large: '녹음이 너무 큽니다. 짧게 다시 말해 주세요.', audio_too_long: '녹음이 너무 깁니다. 가수와 곡명만 짧게 다시 말해 주세요.',
   transcription_failed: '기기에서 음성을 인식하지 못했습니다. 언어를 직접 선택하고 다시 말해 주세요.',
   decode_failed: '이 기기가 녹음 파일을 읽지 못했습니다.', invalid_audio: '녹음 내용을 처리하지 못했습니다. 짧게 다시 말해 주세요.',
   no_speech: '인식된 문장이 없습니다. 짧고 또렷하게 다시 말해 주세요.',

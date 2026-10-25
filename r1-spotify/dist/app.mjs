@@ -1,12 +1,12 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r25';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r25';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r25';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r25';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r25';
-import { RabbitProbe } from './rabbit-probe.mjs?v=20261025-r25';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r26';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r26';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r26';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r26';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r26';
+import { RabbitProbe } from './rabbit-probe.mjs?v=20261025-r26';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r25';
+import { setupPairing } from './pair-device.mjs?v=20261025-r26';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -14,7 +14,7 @@ const client = new SpotifyClient({ redirectUri });
 let startupReady = false;
 let pairingController = null;
 let voiceController = null, voiceOpen = false, voiceWasActive = false, voiceFocus = null, voicePointer = null, longPressReset;
-let voiceModelLoading = false, voiceModelRun = 0;
+let voiceModelLoading = false, voiceModelPromise = null, voiceModelError = '';
 let player = normalizePlayer(null), sampledAt = performance.now(), busy = false, stale = false;
 let screen = 'player', pollTimer, revision = 0, lastAction = -Infinity;
 let volumeTarget = null, volumeDevice = null, volumeTimer;
@@ -94,6 +94,8 @@ async function refreshPlayer() {
     if (request !== revision) return;
     const changed = next.id !== player.id;
     player = next; sampledAt = performance.now(); stale = false; render();
+    // Warm the model only after Spotify has responded; never block playback or open the mic.
+    void prepareVoiceModel();
     if (changed && screen === 'lyrics') loadLyrics();
   } catch (error) {
     if (request !== revision) return;
@@ -279,12 +281,12 @@ function openVoice() {
     $('voice-cancel').focus();
     controls();
     renderVoiceModel();
+    void prepareVoiceModel();
   }
   return true;
 }
 function closeVoice() {
   voiceOpen = false; voicePointer = null;
-  voiceModelRun++; voiceModelLoading = false;
   voiceController?.cancel();
   $('voice-panel').hidden = true;
   for (const view of document.querySelectorAll('.view')) view.inert = false;
@@ -304,7 +306,7 @@ function renderVoice(state = voiceController.state) {
   $('voice-transcript').textContent = state.transcript;
   $('voice-transcript').hidden = !state.transcript;
   $('voice-language').textContent = state.language ? t('감지한 언어: {language}', getLocale(), { language: state.language }) : '';
-  $('voice-record').disabled = !localSpeech.ready || voiceModelLoading || (active && !['preparing', 'recording'].includes(state.phase));
+  $('voice-record').disabled = active && !['preparing', 'recording'].includes(state.phase);
   $('voice-record').setAttribute('aria-pressed', String(state.phase === 'recording'));
   $('voice-record').textContent = t(state.phase === 'recording' ? '놓으면 검색' : '누르고 말하기');
   $('voice-results').replaceChildren();
@@ -320,41 +322,50 @@ function renderVoice(state = voiceController.state) {
   renderVoiceModel();
 }
 function renderVoiceModel(message) {
-  $('voice-prepare').disabled = voiceModelLoading || Boolean(voiceController?.active) || localSpeech.ready;
-  $('voice-prepare').textContent = t(localSpeech.ready ? '음성 인식 준비 완료' : voiceModelLoading ? '음성 인식 준비 중…' : '음성 인식 준비');
-  $('voice-model-status').textContent = message || t(localSpeech.ready ? '준비 완료 · 버튼을 누른 채 말하고 놓으세요.' : voiceModelLoading ? '모델을 준비하고 있습니다. 처음에는 몇 분 걸릴 수 있습니다.' : '먼저 음성 인식 준비를 눌러 주세요.');
-  $('voice-record').disabled = !localSpeech.ready || voiceModelLoading || (Boolean(voiceController?.active) && !['preparing', 'recording'].includes(voiceController.state.phase));
+  const active = Boolean(voiceController?.active);
+  $('voice-prepare').hidden = !voiceModelError;
+  $('voice-prepare').disabled = voiceModelLoading || active;
+  $('voice-model-status').hidden = !voiceModelError && (localSpeech.ready || !voiceModelLoading);
+  $('voice-model-status').textContent = message || voiceModelError || t('음성 기능을 자동으로 준비하고 있습니다. 지금 말해도 됩니다.');
+  $('voice-record').disabled = active && !['preparing', 'recording'].includes(voiceController.state.phase);
 }
 const localSpeech = new LocalSpeechProbe({ onState(event) {
-  if (!voiceOpen) return;
   if (event.state === 'loading') {
+    voiceModelLoading = true; voiceModelError = '';
     const progress = event.progress?.progress;
     renderVoiceModel(Number.isFinite(progress) ? t('음성 모델 파일 준비 {progress}%', getLocale(), { progress: Math.round(Math.max(0, Math.min(100, progress))) }) : undefined);
-  } else if (['ready', 'cancelled'].includes(event.state)) renderVoiceModel();
-  else if (event.state === 'error') renderVoiceModel(t(keylessVoiceMessage(event)));
+  } else if (['ready', 'cancelled', 'transcribing', 'success'].includes(event.state)) {
+    voiceModelLoading = false; voiceModelError = '';
+    renderVoiceModel();
+    if (event.state === 'transcribing' && voiceController?.active && voiceController.state.phase === 'transcribing') {
+      voiceController.update({ message: '기기에서 음성을 글자로 바꾸고 있습니다. 잠시 기다려 주세요.' });
+    }
+  } else if (event.state === 'error') {
+    voiceModelLoading = false;
+    voiceModelError = localSpeech.ready ? '' : t(keylessVoiceMessage(event));
+    renderVoiceModel();
+  }
 } });
 const rabbitVoice = new RabbitProbe();
 voiceController = new VoiceController({ client, onChange: renderVoice, transcriber: createKeylessTranscriber(localSpeech, rabbitVoice),
-  canStart: () => startupReady && client.connected && !busy && !voiceModelLoading && !document.hidden && !suspended && ['player', 'lyrics'].includes(screen),
+  canStart: () => startupReady && client.connected && !busy && !document.hidden && !suspended && ['player', 'lyrics'].includes(screen),
   deviceId: () => player.deviceId || undefined,
 });
-$('voice-prepare').onclick = async () => {
-  if (voiceModelLoading || voiceController.active || localSpeech.ready) return;
-  const run = ++voiceModelRun;
-  voiceModelLoading = true; renderVoiceModel();
-  try {
-    await localSpeech.prepare();
-    if (run === voiceModelRun && voiceOpen) voiceController.update({ phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] });
-  }
-  catch (error) { if (run === voiceModelRun && voiceOpen) renderVoiceModel(t(keylessVoiceMessage(error))); }
-  finally {
-    if (run === voiceModelRun) {
-      const previousMessage = $('voice-model-status').textContent;
-      voiceModelLoading = false;
-      renderVoiceModel(localSpeech.ready ? undefined : previousMessage);
-    }
-  }
-};
+function prepareVoiceModel(retry = false) {
+  if (!client.connected || document.hidden || suspended || !localSpeech.supported || !rabbitVoice.supported || localSpeech.ready) return;
+  if (voiceModelPromise) return voiceModelPromise;
+  if (voiceModelError && !retry) return;
+  voiceModelLoading = true; voiceModelError = ''; renderVoiceModel();
+  const pending = localSpeech.prepare().catch(error => {
+    if (error?.code !== 'cancelled') voiceModelError = t(keylessVoiceMessage(error));
+  }).finally(() => {
+    if (voiceModelPromise !== pending) return;
+    voiceModelPromise = null; voiceModelLoading = false; renderVoiceModel();
+  });
+  voiceModelPromise = pending;
+  return pending;
+}
+$('voice-prepare').onclick = () => void prepareVoiceModel(true);
 $('voice-open').onclick = () => openVoice();
 $('voice-cancel').onclick = closeVoice;
 const voiceButton = $('voice-record');
@@ -416,7 +427,7 @@ document.addEventListener('keydown', event => {
     if (event.key === 'Escape') { event.preventDefault(); closeVoice(); }
     else if (['ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); scrollInput(event.key === 'ArrowUp' ? -1 : 1, 'keyboard'); }
     else if (event.key === 'Tab') {
-      const buttons = [...$('voice-panel').querySelectorAll('button:not(:disabled)')];
+      const buttons = [...$('voice-panel').querySelectorAll('button:not(:disabled)')].filter(button => !button.hidden && button.getClientRects().length);
       const index = buttons.indexOf(document.activeElement);
       if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); }
       else if (!event.shiftKey && (index === -1 || index === buttons.length - 1)) { event.preventDefault(); buttons[0]?.focus(); }

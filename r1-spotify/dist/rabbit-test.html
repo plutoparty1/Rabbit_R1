@@ -6,12 +6,12 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>R1 · API 키 없는 실기 테스트</title>
-  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r25-test">
+  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r26-test">
 </head>
 <body>
   <main>
     <header><h1>래빗 음성 진단</h1><a href="./">‹ Spotify</a></header>
-    <p class="intro">API 키·Spotify 로그인 없이 테스트<br><span class="tag">진단 버전 20261025-r25-test</span></p>
+    <p class="intro">API 키·Spotify 로그인 없이 테스트<br><span class="tag">진단 버전 20261025-r26-test</span></p>
     <nav class="jump-links" aria-label="테스트 단계로 이동"><a href="#rabbit-title">① AI</a><a href="#speech-title">② 음성</a><a href="#analyze-title">③ 분석</a><a href="#summary-title">결과</a></nav>
     <p class="notice">Whisper: 기기 안에서 음성 인식<br>처음 약 65MB 다운로드 · API 키 없음<br>①·③은 문장만 래빗 AI로 전송</p>
 
@@ -28,7 +28,7 @@
       <p>먼저 준비를 누르고 완료될 때까지 기다리세요. 그다음 3~5초 정도 짧게 말해 보세요. 기기 성능에 따라 인식 시간이 걸립니다.</p>
       <button id="local-prepare" type="button" class="primary">음성 인식 준비 · 처음 약 65MB</button>
       <p id="model-status" class="status" role="status">준비 전</p>
-      <p>아래 버튼이나 래빗 옆 버튼을 누른 채 한 문장만 말하고 놓으세요. 최대 15초입니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
+      <p>아래 버튼이나 래빗 옆 버튼을 누른 채 한 문장만 말하고 놓으세요. Whisper는 버튼을 놓을 때 종료하며, 1분 후에는 자동 종료됩니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
       <label for="speech-language">인식 언어</label>
       <select id="speech-language">
         <option value="" selected>자동 감지 · Whisper</option>
@@ -85,12 +85,12 @@
       <p id="copy-status" role="status"></p>
       <textarea id="report" rows="8" readonly hidden aria-label="복사할 진단 결과"></textarea>
     </section>
-    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r25-test</p></footer>
+    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r26-test</p></footer>
   </main>
   <aside id="active-controls" hidden aria-label="진행 중인 테스트">
     <p id="active-status" role="status">확인 중</p>
     <div><button id="capture-release" type="button">입력 종료</button><button id="cancel-test" type="button">취소</button></div>
   </aside>
-  <script type="module" src="./rabbit-test.mjs?v=20261025-r25-test"></script>
+  <script type="module" src="./rabbit-test.mjs?v=20261025-r26-test"></script>
 </body>
 </html>

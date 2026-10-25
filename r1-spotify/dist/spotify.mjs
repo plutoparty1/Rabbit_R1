@@ -1,3 +1,5 @@
+import { rankSongCandidates } from './song-request.mjs';
+
 // Only the non-secret device choice is persisted for shared-device sessions.
 const MODE_KEY = 'r1_spotify_device_mode';
 let memoryTokens = null;
@@ -264,18 +266,26 @@ export class SpotifyClient {
     const trackName = clean(title), artistName = clean(artist);
     if (!trackName) throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
     const query = 'track:"' + trackName + '"' + (artistName ? ' artist:"' + artistName + '"' : '');
-    const search = async q => {
-      const result = await this.request('/search?' + new URLSearchParams({ q, type: 'track', limit: '5' }), { signal });
+    const search = async (q, limit = 5) => {
+      const result = await this.request('/search?' + new URLSearchParams({ q, type: 'track', limit: String(limit) }), { signal });
       const seen = new Set();
       return (Array.isArray(result?.tracks?.items) ? result.tracks.items : []).filter(track => {
         if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(track?.uri) || !track.name || !Array.isArray(track.artists) ||
             track.is_local || track.is_playable === false || track.restrictions?.reason || seen.has(track.uri)) return false;
         seen.add(track.uri); return true;
-      }).slice(0, 5);
+      }).slice(0, limit);
     };
     const matches = await search(query);
     // Broader candidates can be chosen by the user; they are never assumed to be an exact match.
-    return matches.length ? matches : search([trackName, artistName].filter(Boolean).join(' '));
+    if (matches.length) return matches;
+    const broad = await search([trackName, artistName].filter(Boolean).join(' '));
+    if (broad.length || !artistName) return broad;
+    // A small recognizer can preserve the artist while damaging the title. Offer
+    // actual catalog choices rather than inventing a corrected song or replaying
+    // a guessed match. The controller must require a tap for voiceRecovery tracks.
+    const catalog = await search('artist:"' + artistName + '"', 10);
+    return rankSongCandidates(catalog, { title: trackName }).slice(0, 5)
+      .map(track => ({ ...track, voiceRecovery: true }));
   }
   async playTrack(uri, deviceId, { signal } = {}) {
     if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(uri)) throw new Error('유효한 Spotify 곡을 선택해 주세요.');

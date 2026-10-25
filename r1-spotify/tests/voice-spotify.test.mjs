@@ -38,6 +38,44 @@ test('empty filtered search offers broad candidates without issuing playback', a
   assert.ok(calls.every(call => call.options.method === 'GET'));
 });
 
+test('garbled title can recover actual artist catalog choices, always marked for confirmation', async () => {
+  const calls = [];
+  const candidates = ['팔레트', '밤편지 (Live)', '밤편지', '좋은 날'].map((name, index) => ({
+    uri: 'spotify:track:' + String.fromCharCode(97 + index).repeat(22), name, artists: [{ name: 'IU' }],
+  }));
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return json({ tracks: { items: calls.length === 3 ? candidates : [] } });
+  });
+  const matches = await client.searchTracks({ title: '편벤지트로저', artist: 'IU' });
+  assert.equal(calls.length, 3);
+  assert.equal(calls[2].url.searchParams.get('q'), 'artist:"IU"');
+  assert.equal(calls[2].url.searchParams.get('limit'), '10');
+  assert.equal(matches[0].name, '밤편지');
+  assert.ok(matches.every(item => item.voiceRecovery === true));
+  assert.ok(candidates.every(item => item.voiceRecovery === undefined));
+  assert.ok(calls.every(call => call.options.method === 'GET'));
+});
+
+test('empty title-only searches never broaden to an arbitrary artist catalog', async () => {
+  const calls = [];
+  const client = makeClient(async url => { calls.push(url); return json({ tracks: { items: [] } }); });
+  assert.deepEqual(await client.searchTracks({ title: 'unrecognized words' }), []);
+  assert.equal(calls.length, 2);
+});
+
+test('cancellation after broad search prevents the artist recovery request', async () => {
+  let calls = 0;
+  const controller = new AbortController();
+  const client = makeClient(async () => {
+    calls++;
+    if (calls === 2) controller.abort();
+    return json({ tracks: { items: [] } });
+  });
+  await assert.rejects(client.searchTracks({ title: 'garbled', artist: 'known artist', signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(calls, 2);
+});
+
 test('play sends track URI JSON and safely encoded device; 401 refresh retains payload', async () => {
   const calls = [];
   const client = makeClient(async (url, options) => {

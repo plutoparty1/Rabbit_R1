@@ -138,7 +138,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     check(!unmatchedText.includes('secret-') && !unmatchedText.includes('wrong-request') && !unmatchedText.includes('아이유'), 'Failure report exposes response contents');
     const stageSummary = await tab.locator('#stage-results').innerText();
     check(['① 래빗 AI', '② 음성', '② 마이크', '③ 문장 분석', 'rabbit_unmatched_response', 'no_speech'].every(label => stageSummary.includes(label)), 'Copy-free summary lacks stage results/codes');
-    check((await tab.locator('.intro').innerText()).includes('20261025-r25-test'), 'Current version not visible near intro');
+    check((await tab.locator('.intro').innerText()).includes('20261025-r26-test'), 'Current version not visible near intro');
     if (screenshotDir) {
       await tab.setViewportSize({ width: 240, height: 282 });
       await tab.evaluate(() => window.scrollTo(0, 0));

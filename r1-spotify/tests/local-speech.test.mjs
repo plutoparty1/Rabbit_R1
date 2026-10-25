@@ -59,10 +59,9 @@ test('preparation downloads only through a module worker and never opens the mic
   assert.equal(f.probe.supported, true);
   assert.equal(f.probe.ready, false);
   await assert.rejects(f.probe.begin(), { code: 'local_not_ready' });
-  await assert.rejects(f.probe.transcribeBlob(new Blob(['audio'])), { code: 'local_not_ready' });
   const pending = f.probe.prepare(), worker = f.workers[0];
   assert.equal(f.probe.active, true);
-  assert.equal(worker.url.href.endsWith('/local-asr-worker.mjs?v=20261025-r25'), true);
+  assert.equal(worker.url.href.endsWith('/local-asr-worker.mjs?v=20261025-r26'), true);
   assert.deepEqual(worker.options, { type: 'module' });
   assert.equal(f.captures(), 0);
   assert.equal(f.contexts.length, 0);
@@ -175,12 +174,12 @@ test('microphone permission timeout and denial do not discard an already loaded 
   f.probe.dispose();
 });
 
-test('recording limits stop at 15 seconds and stop watchdog releases resources', async () => {
+test('stuck-button safety limit stops at 60 seconds and stop watchdog releases resources', async () => {
   const f = fixture(); await f.ready();
   const pending = f.probe.begin(), rejected = assert.rejects(pending, { code: 'stop_timeout' });
   await tick();
   f.recorders[0].chunk();
-  f.fire(15000);
+  f.fire(60000);
   assert.equal(f.recorders[0].stopRequested, true);
   f.fire(5000); await rejected;
   assert.equal(f.stopped(), 1);
@@ -277,7 +276,7 @@ test('blob size, decoded duration/channel bounds, and decoder errors are validat
   await assert.rejects(f.probe.transcribeBlob(new Blob([])), { code: 'empty_audio' });
   await assert.rejects(f.probe.transcribeBlob(new Blob([new Uint8Array(2 * 1024 * 1024 + 1)])), { code: 'audio_too_large' });
   await assert.rejects(f.probe.transcribeBlob({ size: 2 }), { code: 'invalid_audio' });
-  f.decoded = decodedAudio({ length: 48000 * 17 });
+  f.decoded = decodedAudio({ length: 48000 * 62 });
   await assert.rejects(f.probe.transcribeBlob(new Blob(['encoded'])), { code: 'audio_too_long' });
   f.decoded = decodedAudio({ channels: 8 });
   await assert.rejects(f.probe.transcribeBlob(new Blob(['encoded'])), { code: 'invalid_audio' });
@@ -323,7 +322,7 @@ test('resampling averages channels, linearly interpolates, clamps PCM, and caps 
   assert.equal(result[2], 0.75);
   assert.equal(resampleToMono16k(decodedAudio({ value: 1.000001 }))[0], 1);
   assert.equal(resampleToMono16k(decodedAudio({ value: -2 }))[0], -1);
-  assert.equal(resampleToMono16k(decodedAudio({ length: 48000 * 16 })).length, 240000);
+  assert.equal(resampleToMono16k(decodedAudio({ rate: 16000, length: 16000 * 61 })).length, 960000);
   assert.throws(() => resampleToMono16k(decodedAudio({ value: NaN })), { code: 'invalid_audio' });
   assert.throws(() => resampleToMono16k(decodedAudio({ length: 48 })), { code: 'empty_audio' });
   assert.throws(() => resampleToMono16k(decodedAudio({ rate: 1000 })), { code: 'invalid_audio' });
@@ -339,4 +338,37 @@ test('downsampling preserves speech-band audio and rejects aliasing at 44.1, 48 
     assert.ok(rms(tone(1000)) > 0.69, `1 kHz speech band preserved at ${rate}`);
     assert.ok(rms(tone(10000)) < 0.01, `10 kHz alias rejected at ${rate}`);
   }
+});
+
+ test('cold transcription joins one background preparation without delaying microphone capture elsewhere', async () => {
+  const f = fixture(), loading = f.probe.prepare(), joined = f.probe.prepare();
+  const pending = f.probe.transcribeBlob(new Blob(['recorded while loading']));
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.contexts.length, 0);
+  assert.equal(f.captures(), 0);
+  f.workers[0].reply('ready'); await Promise.all([loading, joined]); await tick();
+  assert.equal(f.workers[0].messages.at(-1).data.type, 'transcribe');
+  f.workers[0].reply('result', { text: 'play a song', language: 'en' });
+  assert.equal((await pending).transcript, 'play a song');
+  f.probe.dispose();
+});
+
+ test('cancel at preparation completion cannot start a stale transcription', async () => {
+  const f = fixture();
+  const pending = f.probe.transcribeBlob(new Blob(['cancelled recording']));
+  const rejected = assert.rejects(pending, { code: 'cancelled' });
+  f.workers[0].reply('ready'); f.probe.cancel(); await rejected;
+  assert.equal(f.contexts.length, 0);
+  assert.equal(f.workers[0].messages.length, 1);
+  assert.equal(f.probe.ready, true);
+  f.probe.dispose();
+});
+
+ test('twenty-second speech is preserved beyond the former fifteen-second cutoff', async () => {
+  const f = fixture(); await f.ready();
+  f.decoded = decodedAudio({ rate: 16000, length: 16000 * 20 });
+  const pending = f.probe.transcribeBlob(new Blob(['long recording'])); await tick();
+  assert.equal(f.workers[0].messages.at(-1).data.audio.length, 320000);
+  f.workers[0].reply('result', { text: 'long song request', language: 'en' }); await pending;
+  f.probe.dispose();
 });

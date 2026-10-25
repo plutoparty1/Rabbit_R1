@@ -4,7 +4,9 @@ const LIBRARY_URL = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.
 const WASM_PATH = 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1/dist/';
 const MODEL_ID = 'Xenova/whisper-tiny';
 const MODEL_REVISION = '5332fcc35e32a33b86612b9a57a89be7906102b1';
-const MAX_SAMPLES = 15 * 16000;
+const SAMPLE_RATE = 16000;
+const MAX_SAMPLES = 60 * SAMPLE_RATE;
+const SINGLE_WINDOW_SAMPLES = 30 * SAMPLE_RATE;
 const PROGRESS_STATUSES = new Set(['initiate', 'download', 'progress', 'done', 'ready']);
 const INPUT_LANGUAGES = new Set(['', 'ko', 'en', 'ja']);
 
@@ -41,7 +43,7 @@ function disposeTensors(values, Tensor) {
   }
 }
 
-async function detectLanguage(transcriber, library, audio) {
+async function detectLanguage(transcriber, library, inputs) {
   // Transformers.js 3.8.1 defaults to English if language is omitted. Implement
   // Whisper's documented first-token language classification explicitly instead:
   // https://github.com/openai/whisper/blob/main/whisper/decoding.py#L19
@@ -49,11 +51,9 @@ async function detectLanguage(transcriber, library, audio) {
   const startToken = config?.decoder_start_token_id;
   const languages = config?.lang_to_id;
   if (!Number.isSafeInteger(startToken) || !languages) throw new Error('language_detection_unavailable');
-  let inputs;
   let output;
   let decoderInput;
   try {
-    inputs = await transcriber.processor(audio);
     decoderInput = new library.Tensor('int64', new BigInt64Array([BigInt(startToken)]), [1, 1]);
     output = await transcriber.model({ ...inputs, decoder_input_ids: decoderInput });
     const logits = output?.logits;
@@ -77,8 +77,54 @@ async function detectLanguage(transcriber, library, audio) {
     return bestLanguage;
   } finally {
     disposeTensors(output, library.Tensor);
-    disposeTensors(inputs, library.Tensor);
     disposeTensors({ decoderInput }, library.Tensor);
+  }
+}
+
+async function encodeAudio(transcriber, inputs) {
+  // Pinned Transformers.js exposes the encoder preparation method used by
+  // generate(). Reuse its result for language detection and transcription.
+  return transcriber.model._prepare_encoder_decoder_kwargs_for_generation({
+    inputs_tensor: inputs.input_features,
+    model_inputs: inputs,
+    model_input_name: 'input_features',
+    generation_config: { guidance_scale: null },
+  });
+}
+
+async function recognize(transcriber, library, audio, requestedLanguage) {
+  let inputs;
+  let generated;
+  try {
+    const longAudio = audio.length > SINGLE_WINDOW_SAMPLES;
+    inputs = await transcriber.processor(longAudio ? audio.subarray(0, 25 * SAMPLE_RATE) : audio);
+    let language = requestedLanguage;
+    if (!language) {
+      inputs = await encodeAudio(transcriber, inputs);
+      language = await detectLanguage(transcriber, library, inputs);
+    }
+    const options = {
+      language,
+      task: 'transcribe',
+      return_timestamps: false,
+      max_new_tokens: 128,
+      do_sample: false,
+      num_beams: 1,
+    };
+    if (longAudio) {
+      // Preserve the complete recording. The supported pipeline merges overlap
+      // tokens instead of truncating at Whisper's fixed 30-second input window.
+      disposeTensors(inputs, library.Tensor);
+      inputs = null;
+      const output = await transcriber(audio, { ...options, chunk_length_s: 25, stride_length_s: 3 });
+      return { text: output?.text, language };
+    }
+    generated = await transcriber.model.generate({ ...inputs, ...options });
+    const text = transcriber.tokenizer.batch_decode(generated, { skip_special_tokens: true })[0];
+    return { text, language };
+  } finally {
+    disposeTensors(inputs, library.Tensor);
+    disposeTensors({ generated }, library.Tensor);
   }
 }
 
@@ -108,6 +154,9 @@ export function installLocalAsrWorker(scope, loadLibrary = () => import(LIBRARY_
         if (progress) send(id, 'progress', { progress });
       },
     });
+    // 3.8.1 supports encoder_outputs in generation but omits it from Whisper's
+    // input allowlist. Keep it so generate() does not encode the same audio twice.
+    transcriber.model.forward_params = [...new Set([...transcriber.model.forward_params, 'encoder_outputs'])];
   }
 
   async function onMessage(event) {
@@ -129,17 +178,9 @@ export function installLocalAsrWorker(scope, loadLibrary = () => import(LIBRARY_
       }
       if (type === 'load') return send(id, 'ready');
       try {
-        const language = message.language || await detectLanguage(transcriber, library, message.audio);
-        const output = await transcriber(message.audio, {
-          language,
-          task: 'transcribe',
-          return_timestamps: false,
-          max_new_tokens: 128,
-          do_sample: false,
-          num_beams: 1,
-        });
+        const output = await recognize(transcriber, library, message.audio, message.language || '');
         const text = typeof output?.text === 'string' ? output.text.trim().slice(0, 2000) : '';
-        send(id, 'result', { text, language });
+        send(id, 'result', { text, language: output.language });
       } catch {
         error(id, 'transcription_failed');
       }

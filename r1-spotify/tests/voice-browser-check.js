@@ -1,4 +1,4 @@
-// Playwright callback. All microphone, AI and Spotify data is simulated; no real audio/account is used.
+// Playwright callback. Microphone, AI and Spotify data is simulated; no real audio/account is used.
 async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
   const browser = page.context().browser(), reports = [];
   const check = (condition, message) => { if (!condition) throw new Error(message); };
@@ -13,8 +13,8 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     try {
       await context.addInitScript(() => {
         sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ access_token: 'fake-access', refresh_token: 'fake-refresh', clientId: 'a'.repeat(32), expiresAt: Date.now() + 3600000 }));
-        window.micCalls = 0; window.micStops = 0;
-        window.rabbitTexts = []; window.modelError = false;
+        window.micCalls = 0; window.micStops = 0; window.modelLoads = 0; window.modelCancels = 0;
+        window.rabbitTexts = []; window.modelError = false; window.delayTranscription = false;
         window.PluginMessageHandler = { postMessage(value) {
           const request = JSON.parse(value);
           if (!request.useLLM) return;
@@ -36,12 +36,22 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await context.route('**/local-speech.mjs?*', route => route.fulfill({ contentType: 'text/javascript', body: `
         export class LocalSpeechProbe {
           constructor(options) { this.options = options; this.ready = false; this.supported = true; window.mockRecognizer = this; }
-          async prepare() { this.options.onState({ state: 'loading', progress: { progress: 50 } }); this.ready = true; this.options.onState({ state: 'ready' }); }
+          prepare() {
+            if (this.ready) return Promise.resolve();
+            if (this.pending) return this.pending;
+            window.modelLoads++;
+            this.options.onState({ state: 'loading', progress: { progress: 50 } });
+            this.pending = new Promise(resolve => { window.finishModel = () => { this.ready = true; this.pending = null; this.options.onState({ state: 'ready' }); resolve(); }; });
+            return this.pending;
+          }
           async transcribeBlob(blob) {
+            await this.prepare();
+            this.options.onState({ state: 'transcribing' });
             if (window.modelError) throw Object.assign(new Error('runtime detail'), { code: 'local_transcription_timeout' });
+            if (window.delayTranscription) await new Promise(resolve => { window.finishTranscription = resolve; });
             return { transcript: '아이유의 밤편지 틀어줘', lang: 'ko' };
           }
-          cancel() {} dispose() {}
+          cancel() { window.modelCancels++; } dispose() {}
         }
       ` }));
       await context.route('https://api.spotify.com/**', route => {
@@ -52,14 +62,30 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       });
       const tab = await context.newPage(); tab.on('pageerror', error => errors.push(error.message));
       await tab.goto(baseURL); await tab.locator('#title').filter({ hasText: '밤편지' }).waitFor();
-      await tab.locator('#voice-open').click();
-      check(await tab.locator('#voice-record').isDisabled(), 'Capture enabled before model prepared');
+      await tab.waitForFunction(() => window.modelLoads === 1);
+      check(await tab.evaluate(() => window.micCalls) === 0, 'Background prepare opened microphone');
+      // A physical hold on playback immediately records even before model download completes.
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
-      await tab.locator('#voice-panel[data-phase="error"]').waitFor();
+      await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
+      check(await tab.locator('#voice-prepare').isHidden(), 'Normal flow still needs a prepare button');
+      check(await tab.evaluate(() => window.mockRecognizer.ready) === false, 'Cold hold test was already warm');
+      await tab.keyboard.press('Escape');
+      check(await tab.evaluate(() => window.modelCancels) === 0, 'Closing a recording cancelled background model setup');
+      check(await tab.evaluate(() => window.micCalls === window.micStops), 'Cold recording cancellation leaked microphone');
+      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
-      check(await tab.evaluate(() => window.micCalls) === 0, 'Unprepared model still opened mic');
-      await tab.locator('#voice-prepare').click();
-      await tab.locator('#voice-record:not(:disabled)').waitFor();
+      await tab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
+      check(playback.length === 0, 'Cold command played before model readiness');
+      check(await tab.evaluate(() => window.micCalls === window.micStops), 'Waiting for model kept microphone open');
+      await tab.evaluate(() => window.finishModel());
+      await tab.locator('#voice-panel[data-phase="done"]').waitFor();
+      check(playback.length === 1 && playback[0].body.uris[0] === uri, 'Cold direct hold did not play once');
+      check(uploads.length === 0, 'Keyless flow called paid voice route');
+      check(await tab.evaluate(() => window.rabbitTexts.length) === 0, 'Clear song command unnecessarily waited for Rabbit AI');
+      await tab.locator('#voice-cancel').click();
+      await tab.locator('#voice-open').click();
+      check(await tab.evaluate(() => window.modelLoads === 1 && window.modelCancels === 0), 'Closing a completed request unloaded the model');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-ready-' + locale + '.png' });
       for (const height of [282, 240]) {
         await tab.setViewportSize({ width: 240, height });
@@ -69,20 +95,10 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       }
       await tab.setViewportSize({ width: 240, height: 282 });
       if (locale === 'en-US') check(!/[가-힣]/.test(await tab.locator('#voice-panel').innerText()), 'English voice UI contains untranslated text');
-      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
-      await tab.locator('#voice-panel[data-phase="recording"]').waitFor({ timeout: 5000 }).catch(async error => {
-        throw new Error(error.message + '\n' + await tab.locator('#voice-panel').innerText() + '\n' + JSON.stringify(errors));
-      });
-      await tab.evaluate(() => { window.dispatchEvent(new Event('longPressEnd')); window.dispatchEvent(new Event('sideClick')); });
-      await tab.locator('#voice-panel[data-phase="done"]').waitFor();
-      check(playback.length === 1 && playback[0].body.uris[0] === uri, 'Exact voice request did not play once');
-      check(uploads.length === 0, 'Keyless flow called paid voice route');
-      check(await tab.evaluate(() => window.rabbitTexts[0]) === '아이유의 밤편지 틀어줘', 'Rabbit did not receive only the transcript');
-      check(await tab.evaluate(() => window.micCalls === window.micStops), 'Microphone not released');
       exact = false;
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
-      await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+      await tab.evaluate(() => { window.dispatchEvent(new Event('longPressEnd')); window.dispatchEvent(new Event('sideClick')); });
       await tab.locator('#voice-panel[data-phase="choosing"]').waitFor();
       check(playback.length === 1, 'Ambiguous result played automatically');
       check(await tab.locator('#voice-results button').count() === 2, 'Candidates missing');
@@ -90,28 +106,23 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.locator('#voice-results button').nth(1).click();
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
       check(playback.length === 2 && playback[1].body.uris[0].endsWith('b'.repeat(22)), 'Candidate selection failed');
-      // Escape while recording stops the microphone without upload or playback.
-      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      check(await tab.evaluate(() => window.modelLoads) === 1, 'Warm command loaded model again');
+      // Explicit cancellation during local inference prevents any later request or playback.
+      await tab.evaluate(() => { window.delayTranscription = true; window.dispatchEvent(new Event('longPressStart')); });
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
+      await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+      await tab.waitForFunction(() => Boolean(window.finishTranscription));
       await tab.keyboard.press('Escape');
-      check(await tab.locator('#voice-panel').isHidden(), 'Cancel did not close panel');
-      check(uploads.length === 0 && playback.length === 2, 'Cancellation submitted audio');
-      check(await tab.evaluate(() => window.micCalls === window.micStops), 'Cancel leaked microphone');
+      await tab.evaluate(() => { window.finishTranscription(); window.delayTranscription = false; });
+      check(await tab.evaluate(() => window.modelCancels) > 0, 'Closing inference did not cancel work');
+      check(uploads.length === 0 && playback.length === 2, 'Cancelled inference sent playback');
       // Local failures remain actionable and never fall back to a paid service.
-      await tab.evaluate(() => { window.modelError = true; });
-      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      await tab.evaluate(() => { window.modelError = true; window.dispatchEvent(new Event('longPressStart')); });
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
       await tab.locator('#voice-panel[data-phase="error"]').waitFor();
       check(!(await tab.locator('#voice-state').innerText()).includes('local_transcription_timeout'), 'Raw local error code shown');
-      await tab.locator('#voice-cancel').click();
-      await tab.evaluate(() => { window.mockRecognizer.ready = false; });
-      const micBefore = await tab.evaluate(() => window.micCalls);
-      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
-      await tab.locator('#voice-panel[data-phase="error"]').waitFor();
-      check(await tab.evaluate(() => window.micCalls) === micBefore, 'Unprepared model still opened mic');
       await tab.evaluate(() => { window.modelError = false; });
-      await tab.locator('#voice-prepare').click();
       exact = true;
       const hold = await tab.locator('#voice-record').boundingBox();
       await tab.mouse.move(hold.x + hold.width / 2, hold.y + hold.height / 2); await tab.mouse.down();
@@ -125,7 +136,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Leaving page leaked microphone');
       check(uploads.length === 0 && playback.length === 3, 'Leaving page submitted voice');
       check(errors.length === 0, 'Browser errors: ' + errors.join('; '));
-      reports.push({ locale, playback: playback.length, uploads: uploads.length, errors });
+      reports.push({ locale, playback: playback.length, uploads: uploads.length, modelLoads: await tab.evaluate(() => window.modelLoads), errors });
     } finally { await context.close(); }
   }
   return reports;

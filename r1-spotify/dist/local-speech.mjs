@@ -2,7 +2,7 @@
 // are downloaded by the worker; recordings are never uploaded or persisted.
 const MAX_BYTES = 2 * 1024 * 1024;
 const SAMPLE_RATE = 16000;
-const MAX_SAMPLES = 15 * SAMPLE_RATE;
+const MAX_SAMPLES = 60 * SAMPLE_RATE;
 const languages = new Map([['', ''], ['ko-KR', 'ko'], ['en-US', 'en'], ['ja-JP', 'ja']]);
 const workerErrors = new Set(['model_load_failed', 'transcription_failed', 'invalid_audio', 'busy']);
 const failure = code => Object.assign(new Error(code), { code });
@@ -10,12 +10,12 @@ const stopTracks = stream => { try { stream?.getTracks().forEach(track => { try 
 const mediaError = reason => ['NotAllowedError', 'SecurityError'].includes(reason?.name) ? 'permission' : reason?.name === 'NotFoundError' ? 'no_microphone' : 'capture_failed';
 const mimes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 
-// MediaRecorder's final chunk can straddle the 15-second stop deadline. Allow
-// at most one extra second for decoding, then cap inference at exactly 15s.
+// A minute caps a stuck button. Allow a second of recorder container rounding;
+// normal capture ends immediately when the user releases the button.
 export function resampleToMono16k(buffer) {
   const rate = buffer?.sampleRate, length = buffer?.length, channels = buffer?.numberOfChannels;
   if (!Number.isFinite(rate) || rate < 8000 || rate > 192000 || !Number.isSafeInteger(length) || length < 1 || ![1, 2].includes(channels)) throw failure('invalid_audio');
-  if (length / rate > 16) throw failure('audio_too_long');
+  if (length / rate > 61) throw failure('audio_too_long');
   const count = Math.min(MAX_SAMPLES, Math.floor(length * SAMPLE_RATE / rate));
   if (count < 160) throw failure('empty_audio');
   let inputs;
@@ -70,6 +70,7 @@ export class LocalSpeechProbe {
     this.session = null;
     this.worker = null;
     this.sequence = 0;
+    this.cancelEpoch = 0;
     this.modelReady = false;
     this.disposed = false;
   }
@@ -134,6 +135,7 @@ export class LocalSpeechProbe {
   }
   async prepare() {
     if (this.disposed) throw failure('disposed');
+    if (this.session?.phase === 'loading') return this.session.promise;
     if (this.active) throw failure('busy');
     if (this.ready) return { ready: true };
     if (!this.supported) throw failure('unsupported');
@@ -143,7 +145,7 @@ export class LocalSpeechProbe {
     this.timer(session, () => this.finish(session, null, 'local_model_timeout', true), 180000);
     try {
       this.terminateWorker();
-      const worker = this.worker = new this.host.Worker(new URL('./local-asr-worker.mjs?v=20261025-r25', import.meta.url), { type: 'module' });
+      const worker = this.worker = new this.host.Worker(new URL('./local-asr-worker.mjs?v=20261025-r26', import.meta.url), { type: 'module' });
       worker.onmessage = event => { if (this.worker === worker) this.receive(event?.data); };
       worker.onerror = worker.onmessageerror = event => {
         try { event?.preventDefault?.(); } catch {}
@@ -222,7 +224,7 @@ export class LocalSpeechProbe {
           session.phase = 'recording';
           recorder.start(250);
           if (!this.current(session)) return;
-          session.durationTimer = this.timer(session, () => this.release(), 15000);
+          session.durationTimer = this.timer(session, () => this.release(), 60000);
           this.emit({ state: 'recording' });
         } catch { this.finish(session, null, 'capture_failed'); }
       }, reason => this.finish(session, null, mediaError(reason)));
@@ -255,8 +257,13 @@ export class LocalSpeechProbe {
     this.processBlob(session, blob);
   }
   async transcribeBlob(blob, { lang = '' } = {}) {
-    this.checkReady();
+    if (this.disposed) throw failure('disposed');
     const language = this.validateLanguage(lang);
+    const epoch = this.cancelEpoch;
+    // The player captures immediately; only transcription joins model loading.
+    if (!this.ready) await this.prepare();
+    if (epoch !== this.cancelEpoch) throw failure('cancelled');
+    this.checkReady();
     const session = this.create('transcribing');
     session.language = language;
     try { session.context = this.createContext(); }
@@ -294,6 +301,7 @@ export class LocalSpeechProbe {
     }
   }
   cancel() {
+    this.cancelEpoch++;
     const session = this.session;
     if (session) this.finish(session, null, 'cancelled', ['loading', 'transcribing'].includes(session.phase));
   }
