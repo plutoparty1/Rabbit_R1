@@ -1,15 +1,17 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261018-r21';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261018-r21';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261018-r21';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r22';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r22';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r22';
+import { VoiceController } from './voice.mjs?v=20261025-r22';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261018-r21';
+import { setupPairing } from './pair-device.mjs?v=20261025-r22';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
 const client = new SpotifyClient({ redirectUri });
 let startupReady = false;
 let pairingController = null;
+let voiceController = null, voiceOpen = false, voiceWasActive = false, voiceFocus = null, voicePointer = null, longPressReset;
 let player = normalizePlayer(null), sampledAt = performance.now(), busy = false, stale = false;
 let screen = 'player', pollTimer, revision = 0, lastAction = -Infinity;
 let volumeTarget = null, volumeDevice = null, volumeTimer;
@@ -32,6 +34,7 @@ function fitViewport() {
 fitViewport(); window.addEventListener('resize', fitViewport); window.visualViewport?.addEventListener('resize', fitViewport);
 
 function show(view) {
+  if (voiceOpen) closeVoice();
   if (screen === 'pair' && view !== 'pair') pairingController?.cancel();
   // 다른 화면으로 이동하면 아직 전송하지 않은 볼륨 입력을 취소합니다.
   if (view !== 'player') { clearTimeout(volumeTimer); volumeTarget = null; }
@@ -43,9 +46,10 @@ function show(view) {
 }
 function status(text, detail = text) { $('status').textContent = text; $('status').title = detail; }
 function controls() {
-  $('previous').disabled = busy || stale || !player.canPrevious;
-  $('next').disabled = busy || stale || !player.canNext;
-  $('toggle').disabled = busy || stale || !player.canToggle;
+  $('previous').disabled = voiceOpen || busy || stale || !player.canPrevious;
+  $('next').disabled = voiceOpen || busy || stale || !player.canNext;
+  $('toggle').disabled = voiceOpen || busy || stale || !player.canToggle;
+  $('voice-open').disabled = busy || !client.connected;
   $('toggle').textContent = player.playing ? 'Ⅱ' : '▶';
   $('toggle').setAttribute('aria-label', player.playing ? t('일시정지') : t('재생'));
 }
@@ -79,7 +83,7 @@ function volumeHelp() {
 // 오래된 응답이 새 곡이나 연결 해제 상태를 덮지 못하도록 요청 번호를 확인합니다.
 async function refreshPlayer() {
   clearTimeout(pollTimer);
-  if (!startupReady || !client.connected || document.hidden || suspended) return;
+  if (!startupReady || !client.connected || document.hidden || suspended || voiceController?.active) return;
   const request = ++revision;
   let delay = 3000;
   try {
@@ -96,13 +100,13 @@ async function refreshPlayer() {
     $('auth-message').textContent = t(error.message);
     delay = error.retryAfter ? error.retryAfter * 1000 : 10000;
   } finally {
-    if (request === revision && client.connected && !document.hidden && !suspended) pollTimer = setTimeout(refreshPlayer, delay);
+    if (request === revision && client.connected && !document.hidden && !suspended && !voiceController?.active) pollTimer = setTimeout(refreshPlayer, delay);
   }
 }
 
 async function command(action, value) {
   const isVolume = action === 'volume';
-  if (busy || (!isVolume && performance.now() - lastAction < 350)) return { applied: false };
+  if (voiceOpen || busy || (!isVolume && performance.now() - lastAction < 350)) return { applied: false };
   if (stale || player.status !== 'ready') throw new Error(t('재생 상태를 먼저 확인해 주세요.'));
   const actual = action === 'toggle' ? (player.playing ? 'pause' : 'play') : action;
   if (!(isVolume ? player.canVolume : actual === 'next' ? player.canNext : actual === 'previous' ? player.canPrevious : ['play', 'pause'].includes(actual) && player.canToggle)) {
@@ -122,7 +126,7 @@ function operate(action) {
 
 // 휠 한 칸은 5%이며 연속 입력을 모아 마지막 목표 볼륨을 순서대로 전송합니다.
 function adjustVolume(delta) {
-  if (document.hidden) return;
+  if (document.hidden || voiceOpen) return;
   if (!client.connected || stale || player.status !== 'ready') { status(t('재생 상태를 먼저 확인해 주세요.')); return; }
   if (!player.canVolume) { const help = volumeHelp(); status(player.deviceType === 'smartphone' ? t('휴대폰에서 음량 조절') : t('기기 음량 조절 미지원'), help); $('auth-message').textContent = help; return; }
   if (volumeDevice !== player.deviceId) volumeTarget = null;
@@ -136,7 +140,7 @@ function adjustVolume(delta) {
 async function flushVolume() {
   clearTimeout(volumeTimer);
   // 화면·연결·기기가 바뀌면 이전 기기의 볼륨 입력을 새 기기에 적용하지 않습니다.
-  if (screen !== 'player' || document.hidden || !client.connected || stale || !player.canVolume || volumeDevice !== player.deviceId) { volumeTarget = null; return; }
+  if (voiceOpen || screen !== 'player' || document.hidden || !client.connected || stale || !player.canVolume || volumeDevice !== player.deviceId) { volumeTarget = null; return; }
   if (volumeTarget === null) return;
   if (busy) { volumeTimer = setTimeout(flushVolume, 150); return; }
   const target = volumeTarget, device = volumeDevice;
@@ -262,14 +266,100 @@ lyricSurface.addEventListener('click', event => {
 $('lyrics-controls').addEventListener('pointerdown', () => clearTimeout(lyricControlsTimer));
 $('lyrics-controls').addEventListener('pointerup', () => setLyricsControls(true));
 $('previous').onclick = () => operate('previous'); $('next').onclick = () => operate('next'); $('toggle').onclick = () => operate('toggle');
-window.addEventListener('sideClick', () => { if (!longPressed && screen !== 'settings') operate('toggle'); });
-window.addEventListener('longPressStart', () => { longPressed = true; });
-window.addEventListener('longPressEnd', () => { setTimeout(() => { longPressed = false; }, 500); });
+function openVoice() {
+  if (!client.connected || busy || document.hidden || suspended || !['player', 'lyrics'].includes(screen)) return false;
+  if (!voiceOpen) {
+    voiceFocus = document.activeElement;
+    voiceOpen = true;
+    for (const view of document.querySelectorAll('.view')) view.inert = true;
+    $('voice-panel').hidden = false;
+    $('voice-cancel').focus();
+    controls();
+  }
+  return true;
+}
+function closeVoice() {
+  voiceOpen = false; voicePointer = null;
+  voiceController?.cancel();
+  $('voice-panel').hidden = true;
+  for (const view of document.querySelectorAll('.view')) view.inert = false;
+  if (voiceFocus?.isConnected && !document.hidden) voiceFocus.focus();
+  voiceFocus = null; controls();
+}
+function renderVoice(state = voiceController.state) {
+  const active = voiceController.active;
+  if (active && !voiceWasActive) {
+    revision++; clearTimeout(pollTimer); pollTimer = null;
+    clearTimeout(volumeTimer); volumeTarget = null; gesture = null; lyricGesture = null;
+  }
+  const finished = voiceWasActive && !active;
+  voiceWasActive = active;
+  $('voice-state').textContent = t(state.message);
+  $('voice-panel').dataset.phase = state.phase;
+  $('voice-transcript').textContent = state.transcript;
+  $('voice-transcript').hidden = !state.transcript;
+  $('voice-language').textContent = state.language ? t('감지한 언어: {language}', getLocale(), { language: state.language }) : '';
+  $('voice-record').disabled = active && !['preparing', 'recording'].includes(state.phase);
+  $('voice-record').setAttribute('aria-pressed', String(state.phase === 'recording'));
+  $('voice-record').textContent = t(state.phase === 'recording' ? '놓으면 검색' : '누르고 말하기');
+  $('voice-results').replaceChildren();
+  for (const track of state.tracks) {
+    const button = document.createElement('button'); button.type = 'button';
+    const title = document.createElement('strong'), artist = document.createElement('span');
+    title.textContent = track.name; artist.textContent = track.artists.map(item => item.name).join(', ');
+    button.append(title, artist); button.onclick = () => void voiceController.choose(track.uri);
+    $('voice-results').append(button);
+  }
+  controls();
+  if (finished && startupReady && client.connected && !document.hidden && !suspended) void refreshPlayer();
+}
+voiceController = new VoiceController({ client, onChange: renderVoice,
+  canStart: () => startupReady && client.connected && !busy && !document.hidden && !suspended && ['player', 'lyrics'].includes(screen),
+  deviceId: () => player.deviceId || undefined,
+});
+$('voice-open').onclick = () => openVoice();
+$('voice-cancel').onclick = closeVoice;
+const voiceButton = $('voice-record');
+voiceButton.addEventListener('pointerdown', event => {
+  if (!event.isPrimary || event.button !== 0 || voiceController.active) return;
+  event.preventDefault(); voicePointer = event.pointerId;
+  voiceButton.setPointerCapture?.(event.pointerId); void voiceController.begin();
+});
+voiceButton.addEventListener('pointerup', event => {
+  if (event.pointerId !== voicePointer) return;
+  event.preventDefault(); voicePointer = null; voiceController.release();
+});
+voiceButton.addEventListener('pointercancel', () => { voicePointer = null; voiceController.cancel(); });
+voiceButton.addEventListener('lostpointercapture', () => {
+  if (voicePointer !== null) {
+    voicePointer = null;
+    if (['preparing', 'recording'].includes(voiceController.state.phase)) voiceController.cancel();
+  }
+});
+voiceButton.addEventListener('contextmenu', event => event.preventDefault());
+voiceButton.addEventListener('keydown', event => {
+  if (![' ', 'Enter'].includes(event.key)) return;
+  event.preventDefault(); if (!event.repeat) void voiceController.begin();
+});
+voiceButton.addEventListener('keyup', event => {
+  if (![' ', 'Enter'].includes(event.key)) return;
+  event.preventDefault(); voiceController.release();
+});
+window.addEventListener('sideClick', () => { if (!longPressed && !voiceOpen && ['player', 'lyrics'].includes(screen)) operate('toggle'); });
+window.addEventListener('longPressStart', () => {
+  clearTimeout(longPressReset); longPressed = true;
+  if (openVoice()) void voiceController.begin();
+});
+window.addEventListener('longPressEnd', () => {
+  voiceController.release(); clearTimeout(longPressReset);
+  longPressReset = setTimeout(() => { longPressed = false; }, 600);
+});
 // WebView가 제공하는 사용자 정의 이벤트·표준 휠·방향키를 같은 탐색 함수로 처리합니다.
 function editingText(target) {
   return target.isContentEditable || target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(target.type));
 }
 function scrollInput(direction, source) {
+  if (voiceOpen) { $('voice-content').scrollTop += direction * 55; return; }
   const now = performance.now();
   if (lastScroll && lastScroll.source !== source && lastScroll.direction === direction && now - lastScroll.at < 40) return;
   lastScroll = { direction, source, at: now };
@@ -284,6 +374,17 @@ window.addEventListener('wheel', event => {
   event.preventDefault(); scrollInput(event.deltaY < 0 ? -1 : 1, 'wheel');
 }, { passive: false, capture: true });
 document.addEventListener('keydown', event => {
+  if (voiceOpen) {
+    if (event.key === 'Escape') { event.preventDefault(); closeVoice(); }
+    else if (['ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); scrollInput(event.key === 'ArrowUp' ? -1 : 1, 'keyboard'); }
+    else if (event.key === 'Tab') {
+      const buttons = [...$('voice-panel').querySelectorAll('button:not(:disabled)')];
+      const index = buttons.indexOf(document.activeElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); buttons.at(-1)?.focus(); }
+      else if (!event.shiftKey && (index === -1 || index === buttons.length - 1)) { event.preventDefault(); buttons[0]?.focus(); }
+    }
+    return;
+  }
   // 버튼이나 체크박스에 초점이 있어도 가사 화면에서 재생 화면으로 복귀합니다.
   if (event.key === 'Escape') { event.preventDefault(); show('player'); return; }
   if (screen === 'lyrics' && event.key === 'Enter' && !editingText(event.target) && !['INPUT', 'BUTTON', 'A'].includes(event.target.tagName)) {
@@ -318,6 +419,7 @@ const modeInputs = [...document.querySelectorAll('input[name="device-mode"]')];
 for (const input of modeInputs) {
   input.checked = input.value === getSessionMode();
   input.onchange = async () => {
+    closeVoice();
     $('connect').disabled = true; $('restore-client-id').hidden = true;
     try {
       // Disconnect before changing policy; never promote a temporary login to persistent storage.
@@ -342,6 +444,7 @@ $('connect-form').onsubmit = async event => {
   } catch (error) { $('auth-message').textContent = t(error.message); $('connect').disabled = false; }
 };
 $('disconnect').onclick = async () => {
+  closeVoice();
   revision++; lyricRevision++; clearTimeout(pollTimer);
   try { await client.disconnect(); player = normalizePlayer(null); stale = false; lines = []; render(); $('disconnect').hidden = true; $('auth-message').textContent = t('이 기기의 연결이 해제되었습니다.'); }
   catch { $('auth-message').textContent = t('저장소 접근에 실패했습니다. 다시 시도해 주세요.'); }
@@ -349,6 +452,7 @@ $('disconnect').onclick = async () => {
 // 앱을 떠날 때 대기 입력과 이전 응답을 무효화하여 숨겨진 화면의 갱신을 중단합니다.
 function suspend() {
   suspended = true; revision++; lyricRevision++;
+  closeVoice(); clearTimeout(longPressReset); longPressed = false;
   for (const timer of [pollTimer, volumeTimer, resumeTimer, viewportTimer]) clearTimeout(timer);
   pollTimer = null; volumeTarget = null; gesture = null; lyricGesture = null;
 }
@@ -447,6 +551,7 @@ function updateLocale() {
   if (locale === displayedLocale) return;
   displayedLocale = locale;
   applyStaticLocale(locale);
+  renderVoice();
   render(); fitViewport();
   $('storage-status').textContent = t(client.storage.notice);
   $('auth-message').textContent = '';

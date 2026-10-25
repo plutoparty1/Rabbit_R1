@@ -12,7 +12,7 @@
 
 See the artwork, track, artist, album and playback progress. Swipe to skip, press the side button to pause, and turn the wheel for volume. The Creation runs on r1 without a companion PC; audio continues on the active phone, computer or speaker signed in to the same Spotify account.
 
-[Get started](#get-started) · [Controls](#controls) · [Self-host](#self-host) · [Privacy](#privacy-and-authentication) · [Troubleshooting](#troubleshooting) · [Verification](#verification)
+[Get started](#get-started) · [Controls](#controls) · [Voice requests](#voice-requests) · [Self-host](#self-host) · [Privacy](#privacy-and-authentication) · [Troubleshooting](#troubleshooting) · [Verification](#verification)
 
 > Open-source under MIT. Open the hosted app, enter your own Spotify Client ID once, then sign in. Self-hosting is optional for developers. Playback control requires Spotify Premium, app account access and an active playback device.
 
@@ -21,6 +21,7 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 | Capability | What you get |
 | --- | --- |
 | Hardware-first control | Side-button play/pause; wheel volume in 5% steps; artwork swipe for previous/next |
+| Multilingual voice requests | Hold the side button, say an artist and song, then release to search; requires voice service configuration and deployment |
 | Focused lyrics | Tap artwork to open lyrics; scroll with the wheel; follow the current line when timestamps exist |
 | Multiple lyric sources | Bugs first, then LRCLIB exact/search and lyrics.ovh fallback |
 | Session recovery | PKCE login, token refresh and on-device session restoration |
@@ -118,6 +119,8 @@ Spotify development-mode user and request limits apply to **each user's own Spot
 | --- | --- | --- |
 | Player | Swipe artwork left / right | Next / previous track |
 | Player | Press r1 side button once | Play / pause |
+| Player / Lyrics | Hold r1 side button, speak, then release | Record and search Spotify by artist and song; automatically play a unique exact match or choose a result |
+| Player | Voice search button | Open the voice panel; hold its recording button with touch, Space or Enter, and release to submit |
 | Player | Wheel up / down | Volume +5% / −5%, within 0–100%, if supported by the active device |
 | Player | Tap artwork | Open lyrics |
 | Lyrics | Wheel or touch scroll | Explore freely; turns off automatic following |
@@ -128,11 +131,27 @@ Spotify development-mode user and request limits apply to **each user's own Spot
 
 Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls timer. Plain lyrics have no timed follow mode. Vertical drags, short touches and cancelled gestures do not close lyrics. The app follows the WebView language for Korean/English UI; original lyrics are not translated.
 
+## Voice requests
+
+The source includes push-to-talk search for the open Creation's player and lyrics screens. It needs a configured voice backend and an updated deployment; a GitHub update alone does not enable it on the public app. Existing playback controls work without voice configuration. Recording and the full recognition-to-playback flow still need verification on a real r1.
+
+**Already signed in before this update? Reconnect and sign in once** to grant the added `user-read-private` permission used by Spotify search and `/v1/me` identity verification. Refreshing an existing token cannot add OAuth permissions. See [Spotify's scope reference](https://developer.spotify.com/documentation/web-api/concepts/scopes).
+
+1. Sign in to Spotify, start playback on your phone, computer or speaker, and open the player or lyrics screen on r1.
+2. Hold the side button and allow microphone access when prompted. Speak after the recording indicator appears, then release the button. If you released while permission was pending, hold again after allowing access.
+3. The app sends the recording for language detection and song extraction, then searches Spotify. One exact title-and-artist match plays automatically; otherwise, choose from up to five candidates.
+
+Example requests: **“아이유의 밤편지 틀어줘”**, **“Play Yesterday by The Beatles”**, or **“테일러 스위프트의 Cruel Summer 틀어줘.”** No language selector is required. The voice service keeps song and artist names in their spoken form instead of translating them. Short utterances, pronunciation, aliases and mixed-language names can still produce a wrong transcription or multiple results; check the displayed candidates when a match is uncertain.
+
+The player's **Voice search** button opens the same panel. Hold its recording button by touch or with Space/Enter, then release to submit. Recording automatically submits at 15 seconds; a recording over 2 MiB is rejected. Cancelling, hiding or leaving the app, changing screens, or disconnecting cancels pending voice work.
+
+Only an open Creation receives these button events. Voice requests control the active Spotify device and do not stream music through r1. The operator must enable voice access for your Spotify user ID separately from your Spotify developer app's user access.
+
 ## How it works
 
 ![Device, Spotify playback and lyrics data flow](docs/assets/architecture.svg)
 
-The browser calls Spotify directly for authentication and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
+The browser calls Spotify directly for authentication, search and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. The optional voice endpoint verifies the caller with Spotify, then sends recorded audio to Gemini for transcription, language detection and artist/title extraction. Spotify search and playback remain in the browser. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
 
 ### Lyrics lookup
 
@@ -173,7 +192,25 @@ node scripts/build.mjs
 npx wrangler dev --config wrangler.jsonc --port 8791
 ```
 
-The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI with `bugs.mjs` and `assets.mjs` into the Worker. Other hosting must support the same module Worker interface and `/api/lyrics/bugs` route.
+The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI and server modules into the Worker. Other hosting must support the same module Worker interface, `/api/lyrics/bugs` and, when enabled, `POST /api/voice/search`.
+
+### Enable voice requests
+
+Configure the following on the deployment's server, then rebuild and deploy the updated source. Users do not enter a Gemini key on r1. Keep the existing Sites hosting when updating the public instance; the Wrangler commands above apply only to an independently hosted fork.
+
+| Server setting | Purpose |
+| --- | --- |
+| `GEMINI_API_KEY` | Required server secret for the Gemini API; never include it in frontend files, a Git commit or a public configuration file |
+| `VOICE_ALLOWED_SPOTIFY_USERS` | Required comma-separated Spotify **user IDs** from `GET https://api.spotify.com/v1/me`: prefer immutable `account_id`, or use `id`; these are neither emails nor Client IDs |
+| `VOICE_MODEL` | Optional Gemini model override; defaults to `gemini-3.8-flash`. Use a model available to your project that supports audio input and structured JSON output |
+
+For an independent Wrangler deployment, set the API key with `npx wrangler secret put GEMINI_API_KEY --config wrangler.jsonc`. Add `VOICE_ALLOWED_SPOTIFY_USERS` and an optional `VOICE_MODEL` to the deployment's environment variables. For local development, use an untracked `.dev.vars` file with those same names. Do not commit real keys or user IDs.
+
+The voice endpoint accepts the current Spotify access token in the Authorization header, verifies it against Spotify's `/v1/me`, and checks the user ID against the server allowlist before calling Gemini. It does not accept anonymous voice requests. `GET /api/voice/config` reports whether the required server settings are present; it does not test provider credentials. Missing voice configuration leaves basic playback available and causes voice requests to report that the service is unavailable.
+
+Each Spotify identity is limited to 6 requests per minute, 60 per hour, and one active request **per warm Worker isolate**. These in-memory limits are not global quotas across instances or restarts. Configure provider spending/usage limits or a shared gateway quota for broader deployments. Spotify verification has an 8-second timeout and Gemini a 25-second timeout; paid inference is not automatically retried. The endpoint accepts at most 2 MiB of decoded audio in a 3 MiB JSON request. Audio formats include WebM, Ogg, WAV, MP3/MPEG, AAC, FLAC, M4A and Opus; MP4 audio is normalized to M4A for the provider.
+
+The implementation uses Gemini's [audio input](https://ai.google.dev/gemini-api/docs/audio) and [generateContent API](https://ai.google.dev/api/generate-content); check [model availability](https://ai.google.dev/gemini-api/docs/models/gemini-3.8-flash) for your project before deployment.
 
 ### Sharing the project
 
@@ -189,12 +226,13 @@ The hosted app controls playback using each user's own Client ID and Spotify log
 
 | Data | Handling |
 | --- | --- |
-| Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage or the site server |
+| Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage. Voice requests temporarily send the access token to the site server for Spotify identity verification; the server does not persist it. Refresh tokens stay on the device and are sent only to Spotify |
 | Pending OAuth transaction | My device: localStorage; Shared device: same-tab sessionStorage; 10-minute expiry, one-time state and PKCE verifier; removed on completion, disconnect or expiry checks |
 | Client ID | Public identifier only; localStorage for My device, same-tab sessionStorage for Shared device |
 | Phone setup relay | Public Client ID, receiver-proof hash and expiry temporarily in Sites storage; no Spotify credentials. Received/cancelled sessions are deleted. Expired sessions cannot be used and abandoned records are pruned during new-session creation. |
 | Bugs request | Track title, artist, album and duration only; no Spotify token |
 | Other lyrics requests | Track metadata sent to the selected provider; no Spotify credentials |
+| Voice request | Audio is sent to the site server and Gemini; Spotify credentials are not sent to Gemini. The app does not persist or log recordings or transcripts. Provider processing and retention are governed by the operator's Gemini service settings and terms |
 
 IndexedDB is browser storage, not a hardware-encrypted vault. The backup remains because a native storage success response may not guarantee persistence. Secure storage initialization is retried for a bounded time; persistent storage must be confirmed before the app reports that login will survive reopening.
 
@@ -214,6 +252,11 @@ Disconnect removes saved credentials and records a logout marker to block restor
 | Login is lost after reopening | Inspect storage diagnostics; reconnect if storage was cleared, blocked or authorization revoked |
 | Rate limited / offline | The app respects Retry-After and labels last-known data; avoid repeated manual commands |
 | Old or cropped UI after returning | Check the displayed version and viewport in diagnostics; compare deployment assets with source |
+| Voice service unavailable / access denied | Operator must deploy the updated code, configure the Gemini secret and allowlist your Spotify user ID; refresh the Spotify login if its access token expired |
+| Existing login needs search permission | Reconnect and sign in once to grant `user-read-private`; token refresh alone does not add this permission |
+| Microphone denied or unsupported | Allow microphone access and use an HTTPS URL; check the current r1 WebView's recording support |
+| Voice request finds the wrong song or multiple songs | Say both artist and title clearly, then inspect the candidate list; proper names and language detection can be misrecognized |
+| Voice recognized but playback fails | Start Spotify on another device with the same account; check Premium, device restrictions and Spotify access |
 
 Foreground polling pauses while the app is hidden. Resume signals are coalesced, viewport size is rechecked, stale responses and queued volume input are invalidated, and displayed lyrics/free-scroll position are retained where possible. Failed skip commands are not blindly retried.
 
@@ -226,7 +269,7 @@ The live view renders every returned paragraph rather than a fixed excerpt. Use 
 ```text
 r1-spotify/
 ├── dist/                 HTML, CSS and browser ES modules (frontend source)
-├── server/               Worker entry and Bugs lookup
+├── server/               Worker entry, Bugs lookup and optional voice service
 ├── scripts/build.mjs     Embeds UI and generates dist/server/
 ├── tests/                Node tests and Playwright callback scenarios
 ├── docs/                 Installation, screenshots, evidence and SVG assets
@@ -244,16 +287,17 @@ node --check dist/app.mjs
 node --check dist/spotify.mjs
 ```
 
-Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs and Worker responses. The `tests/*-check.js` files are Playwright callback functions, not standalone Node test commands. Serve `dist` at `http://127.0.0.1:8791/`, then invoke each callback with a Playwright Page. Most scenarios mock Spotify and lyric responses; `bugs-browser-check.js` uses live Bugs lookup with mocked playback. No lint/typecheck configuration is included.
+Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recording/selection and Worker responses. The `tests/*-check.js` files are Playwright callback functions, not standalone Node test commands. Serve `dist` at `http://127.0.0.1:8791/`, then invoke each callback with a Playwright Page. Most scenarios mock Spotify and lyric responses; `bugs-browser-check.js` uses live Bugs lookup with mocked playback. No lint/typecheck configuration is included.
 
 | Evidence | Scope and limits |
 | --- | --- |
 | Node suite | Reproducible automated logic checks; does not prove hardware behavior |
 | Recorded browser scenarios | 240×282 and smaller viewports, gestures, wheel, follow controls, authentication recovery, volume and resume |
+| r22 voice browser scenarios | English/Korean Edge at 240×282 and 240×240: automatic playback, candidate selection, cancellation, errors and unconfigured service; microphone, recognition and Spotify responses are mocked |
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
-| Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume |
+| Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; real r1 microphone permissions/recording, live multilingual recognition and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261018-r21`. Check your own deployed version in device diagnostics. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r22`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

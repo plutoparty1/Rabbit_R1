@@ -124,17 +124,22 @@ const deviceStore = {
   },
 };
 const TOKEN_KEY = 'r1_spotify_tokens_v1', PENDING_KEY = 'r1_spotify_pkce_v1';
-const SCOPE = 'user-read-playback-state user-modify-playback-state';
+const SCOPE = 'user-read-playback-state user-modify-playback-state user-read-private';
 const random = () => [...crypto.getRandomValues(new Uint8Array(32))].map(byte => byte.toString(16).padStart(2, '0')).join('');
 
 // 지원되지 않는 최신 타임아웃 API 대신 요청 본문 처리까지 취소 타이머를 유지합니다.
 export async function requestJson(url, options = {}, fetcher = fetch, timeoutMs = 10000) {
   const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const abort = () => controller.abort();
+  options.signal?.addEventListener('abort', abort, { once: true });
+  if (options.signal?.aborted) controller.abort();
   try {
+    if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
     const response = await fetcher(url, { ...options, signal: controller.signal });
     const body = response.status === 204 ? null : await response.json().catch(() => null);
+    if (controller.signal.aborted) throw new DOMException('Cancelled', 'AbortError');
     return { response, body };
-  } finally { clearTimeout(timeout); }
+  } finally { clearTimeout(timeout); options.signal?.removeEventListener('abort', abort); }
 }
 
 export class SpotifyClient {
@@ -208,16 +213,38 @@ export class SpotifyClient {
     await this.refreshing;
   }
   async api(path, method = 'GET', retry = true) {
+    return this.request('/me/player' + path, { method, retry });
+  }
+  async voiceAccessToken() {
+    const token = await this.accessToken();
+    if (typeof this.tokens.scope === 'string' && !this.tokens.scope.split(/\s+/).includes('user-read-private')) {
+      throw new Error('음성 검색 권한이 필요합니다. 연결 설정에서 Spotify에 다시 로그인해 주세요.');
+    }
+    return token;
+  }
+  async accessToken() {
+    const generation = this.generation;
+    if (!this.connected) throw new Error('Spotify 로그인이 필요합니다.');
+    if (this.tokens.expiresAt <= Date.now()) await this.refresh();
+    if (generation !== this.generation || !this.connected) throw new Error('연결이 해제되었습니다.');
+    return this.tokens.access_token;
+  }
+  async request(path, { method = 'GET', retry = true, data, signal } = {}) {
+    const generation = this.generation;
     if (!this.connected) throw new Error('Spotify 로그인이 필요합니다.');
     if (Date.now() < this.blockedUntil) {
       const error = new Error('Spotify 요청 제한입니다. 잠시 기다려 주세요.');
       error.retryAfter = Math.ceil((this.blockedUntil - Date.now()) / 1000); throw error;
     }
-    if (this.tokens.expiresAt <= Date.now()) await this.refresh();
-    const { response, body } = await requestJson('https://api.spotify.com/v1/me/player' + path, {
-      method, headers: { Authorization: 'Bearer ' + this.tokens.access_token },
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const accessToken = await this.accessToken();
+    if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
+    const { response, body } = await requestJson('https://api.spotify.com/v1' + path, {
+      method, signal, headers: { Authorization: 'Bearer ' + accessToken, ...(data ? { 'Content-Type': 'application/json' } : {}) },
+      ...(data ? { body: JSON.stringify(data) } : {}),
     }, this.fetcher);
-    if (response.status === 401 && retry) { await this.refresh(); return this.api(path, method, false); }
+    if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
+    if (response.status === 401 && retry) { await this.refresh(); return this.request(path, { method, retry: false, data, signal }); }
     if (response.status === 429) {
       const seconds = Math.max(1, Number(response.headers.get('Retry-After')) || 30);
       this.blockedUntil = Date.now() + seconds * 1000;
@@ -228,6 +255,32 @@ export class SpotifyClient {
     if (response.status === 404) throw new Error('Spotify 앱에서 곡을 먼저 재생해 주세요.');
     if (!response.ok) throw new Error('Spotify 요청에 실패했습니다. 연결 상태를 확인해 주세요.');
     return body;
+  }
+  async searchTracks({ title, artist = '', signal } = {}) {
+    if (typeof title !== 'string' || !title.trim() || title.length > 300 || typeof artist !== 'string' || artist.length > 300) {
+      throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
+    }
+    const clean = value => value.replace(/["\\\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
+    const trackName = clean(title), artistName = clean(artist);
+    if (!trackName) throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
+    const query = 'track:"' + trackName + '"' + (artistName ? ' artist:"' + artistName + '"' : '');
+    const search = async q => {
+      const result = await this.request('/search?' + new URLSearchParams({ q, type: 'track', limit: '5' }), { signal });
+      const seen = new Set();
+      return (Array.isArray(result?.tracks?.items) ? result.tracks.items : []).filter(track => {
+        if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(track?.uri) || !track.name || !Array.isArray(track.artists) ||
+            track.is_local || track.is_playable === false || track.restrictions?.reason || seen.has(track.uri)) return false;
+        seen.add(track.uri); return true;
+      }).slice(0, 5);
+    };
+    const matches = await search(query);
+    // Broader candidates can be chosen by the user; they are never assumed to be an exact match.
+    return matches.length ? matches : search([trackName, artistName].filter(Boolean).join(' '));
+  }
+  async playTrack(uri, deviceId, { signal } = {}) {
+    if (!/^spotify:track:[A-Za-z0-9]{22}$/.test(uri)) throw new Error('유효한 Spotify 곡을 선택해 주세요.');
+    const query = deviceId ? '?' + new URLSearchParams({ device_id: deviceId }) : '';
+    return this.request('/me/player/play' + query, { method: 'PUT', data: { uris: [uri] }, signal });
   }
   async player() { return this.api(''); }
   // Spotify의 실제 재생 기기에 0~100 정수 볼륨을 적용하며 기존 인증·요청 제한 처리를 재사용합니다.

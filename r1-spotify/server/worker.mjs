@@ -4,10 +4,13 @@ import assets from './assets.mjs';
 import { getSpotifyLyrics, validSpotifyLyricsInput } from './spotify-lyrics.mjs';
 import { getBridgeLyrics } from './lyrics-bridge.mjs';
 import { pairing } from './pairing.mjs';
+import { voice } from './voice.mjs';
 
 export default {
   async fetch(request, env = {}) {
     const url = new URL(request.url);
+    const voiceResponse = await voice(request, env);
+    if (voiceResponse) return voiceResponse;
     const pairResponse = await pairing(request, env);
     if (pairResponse) return pairResponse;
     if (url.pathname === '/api/lyrics/spotify') {

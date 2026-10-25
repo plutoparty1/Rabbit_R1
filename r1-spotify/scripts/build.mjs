@@ -5,6 +5,7 @@ const root = new URL('../', import.meta.url);
 const types = { 'index.html': 'text/html', 'style.css': 'text/css', 'app.mjs': 'text/javascript', 'core.mjs': 'text/javascript', 'spotify.mjs': 'text/javascript' };
 const assets = {};
 types['i18n.mjs'] = 'text/javascript';
+types['voice.mjs'] = 'text/javascript';
 types['pair.html'] = 'text/html';
 for (const name of ['pair.mjs', 'pair-api.mjs', 'pair-device.mjs', 'qrcode.mjs']) types[name] = 'text/javascript';
 for (const [filename, type] of Object.entries(types)) {
@@ -19,6 +20,7 @@ const output = new URL('dist/server/', root);
 await mkdir(output, { recursive: true });
 await copyFile(new URL('server/worker.mjs', root), new URL('index.js', output));
 await copyFile(new URL('server/pairing.mjs', root), new URL('pairing.mjs', output));
+await copyFile(new URL('server/voice.mjs', root), new URL('voice.mjs', output));
 await copyFile(new URL('server/bugs.mjs', root), new URL('bugs.mjs', output));
 await copyFile(new URL('server/spotify-lyrics.mjs', root), new URL('spotify-lyrics.mjs', output));
 await copyFile(new URL('server/lyrics-bridge.mjs', root), new URL('lyrics-bridge.mjs', output));

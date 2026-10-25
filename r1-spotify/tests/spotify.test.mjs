@@ -19,6 +19,7 @@ await assert.rejects(() => client.player(), /로그인/);
 const auth = new URL(await client.authorize('a'.repeat(32)));
 assert.equal(auth.origin, 'https://accounts.spotify.com');
 assert.equal(auth.searchParams.get('code_challenge_method'), 'S256');
+assert.ok(auth.searchParams.get('scope').split(' ').includes('user-read-private'));
 assert.equal(auth.searchParams.get('redirect_uri'), 'http://127.0.0.1:8791/');
 await assert.rejects(() => client.finish(new URL('http://127.0.0.1:8791/?code=fake&state=wrong')), /확인/);
 assert.equal(calls.length, 0);

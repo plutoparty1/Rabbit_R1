@@ -1,0 +1,109 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { SpotifyClient } from '../dist/spotify.mjs';
+
+const uri = 'spotify:track:' + 'a'.repeat(22);
+const track = { uri, name: '밤편지', artists: [{ name: '아이유' }] };
+const storage = { set: async () => {}, remove: async () => {} };
+function makeClient(fetcher) {
+  const client = new SpotifyClient({ redirectUri: 'https://app.test/', storage, fetcher });
+  client.tokens = { access_token: 'access', refresh_token: 'refresh', expiresAt: Date.now() + 60000, clientId: 'test' };
+  return client;
+}
+const json = data => Response.json(data);
+
+test('search sends artist/title filters to /v1/search and filters unusable/duplicate results', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return json({ tracks: { items: [track, track, { ...track, uri: 'spotify:episode:bad' },
+      { ...track, uri: 'spotify:track:' + 'b'.repeat(22), is_playable: false }, null] } });
+  });
+  assert.deepEqual(await client.searchTracks({ title: '밤편지', artist: '아이유' }), [track]);
+  assert.equal(calls[0].url.pathname, '/v1/search');
+  assert.equal(calls[0].url.searchParams.get('q'), 'track:"밤편지" artist:"아이유"');
+  assert.equal(calls[0].url.searchParams.get('type'), 'track');
+  assert.equal(calls[0].options.headers.Authorization, 'Bearer access');
+});
+
+test('empty filtered search offers broad candidates without issuing playback', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return json({ tracks: { items: calls.length === 1 ? [] : [track] } });
+  });
+  assert.deepEqual(await client.searchTracks({ title: 'Cruel Summer', artist: '테일러 스위프트' }), [track]);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1].url.searchParams.get('q'), 'Cruel Summer 테일러 스위프트');
+  assert.ok(calls.every(call => call.options.method === 'GET'));
+});
+
+test('play sends track URI JSON and safely encoded device; 401 refresh retains payload', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url, options });
+    if (url.includes('/api/token')) return json({ access_token: 'new-access', expires_in: 3600 });
+    if (calls.length === 1) return new Response(null, { status: 401 });
+    return new Response(null, { status: 204 });
+  });
+  await client.playTrack(uri, 'speaker & room');
+  const playback = calls.filter(call => !call.url.includes('/api/token'));
+  assert.equal(playback.length, 2);
+  for (const call of playback) {
+    assert.equal(new URL(call.url).pathname, '/v1/me/player/play');
+    assert.equal(new URL(call.url).searchParams.get('device_id'), 'speaker & room');
+    assert.equal(call.options.method, 'PUT');
+    assert.deepEqual(JSON.parse(call.options.body), { uris: [uri] });
+  }
+  assert.equal(playback[1].options.headers.Authorization, 'Bearer new-access');
+});
+
+test('invalid input cannot send requests and cancellation does not start a fallback', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return json({ tracks: { items: [] } }); });
+  for (const input of [{}, { title: '' }, { title: 'x'.repeat(301) }, { title: 'x', artist: {} }]) {
+    await assert.rejects(client.searchTracks(input));
+  }
+  await assert.rejects(client.playTrack('https://example.test/'));
+  const controller = new AbortController(); controller.abort();
+  await assert.rejects(client.searchTracks({ title: 'song', signal: controller.signal }), { name: 'AbortError' });
+  assert.equal(calls, 0);
+});
+
+test('late search response after disconnect cannot become a candidate or trigger fallback', async () => {
+  let finish, calls = 0;
+  const client = makeClient(async () => { calls++; return new Promise(resolve => { finish = resolve; }); });
+  const pending = client.searchTracks({ title: 'song' });
+  await new Promise(resolve => setImmediate(resolve));
+  await client.disconnect(); finish(json({ tracks: { items: [] } }));
+  await assert.rejects(pending, /연결/);
+  assert.equal(calls, 1);
+});
+
+test('transient playback failures are never retried; Spotify backoff applies to voice search', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return new Response(null, { status: 503 }); });
+  await assert.rejects(client.playTrack(uri));
+  assert.equal(calls, 1);
+  client.fetcher = async () => { calls++; return new Response(null, { status: 429, headers: { 'Retry-After': '10' } }); };
+  await assert.rejects(client.searchTracks({ title: 'song' }), error => error.retryAfter === 10);
+  await assert.rejects(client.playTrack(uri), error => error.retryAfter > 0);
+  assert.equal(calls, 2);
+});
+
+test('voice token accessor refreshes expiration without exposing refresh token', async () => {
+  const client = makeClient(async () => json({ access_token: 'fresh', expires_in: 3600 }));
+  client.tokens.expiresAt = 0;
+  assert.equal(await client.voiceAccessToken(), 'fresh');
+  await client.disconnect();
+  await assert.rejects(client.voiceAccessToken(), /로그인/);
+});
+
+test('old grants retain playback but voice asks for new consent without sending audio', async () => {
+  const client = makeClient(async () => new Response(null, { status: 204 }));
+  client.tokens.scope = 'user-read-playback-state user-modify-playback-state';
+  await client.control('pause');
+  await assert.rejects(client.voiceAccessToken(), /다시 로그인/);
+  client.tokens.scope += ' user-read-private';
+  assert.equal(await client.voiceAccessToken(), 'access');
+});

@@ -1073,3 +1073,16 @@
 #restore-client-id{width:100%;min-height:44px;margin-top:8px;border:1px solid #536159;padding:8px;font-size:13px}
 #pair-qr{width:156px;height:156px;margin:4px auto;background:white}#pair-qr:empty{display:none}#pair-qr svg{display:block;width:100%;height:100%;shape-rendering:crispEdges}#pair-code{display:block;text-align:center;letter-spacing:3px;font-size:19px;line-height:28px}.pair-instruction{text-align:center;font-size:11px;color:#b9c6bf}#pair-view>header h2{font-size:15px}#pair-view details{margin-top:8px}#pair-phone-link{display:block;overflow-wrap:anywhere;font-size:12px}#pair-message{font-size:12px}#pair-new{min-height:44px;width:100%;border:1px solid #536159}#pair-suffix{font-size:24px;letter-spacing:2px;text-align:center}
 body.phone-setup{height:auto;max-height:none;min-height:100vh;overflow:auto;padding:24px 16px}#phone-app{width:100%;max-width:480px;height:auto;overflow:visible;padding:0 0 24px}#phone-app h1{font-size:26px;line-height:1.3;margin:12px 0}#phone-app>p{margin:12px 0}#phone-app .phone-brand{font-size:12px;font-weight:700;letter-spacing:2px;color:#1ed760}#phone-app details{margin:20px 0}#phone-app label{font-size:14px}#phone-app input{font-size:16px}#phone-app button{min-height:44px;border:1px solid #536159;padding:8px 12px}#phone-app button.primary{border:0}#phone-app h2{font-size:20px}#phone-suffix{font-size:26px;letter-spacing:2px;color:#1ed760}#phone-app #phone-message{color:#b5efc8}
+
+/* The voice panel keeps its hold and close buttons reachable at 240×282. */
+header #voice-open{margin-left:auto;font-size:11px;padding:0 7px;color:#9feab9}
+#voice-panel{position:absolute;inset:0;z-index:10;background:#101211;display:flex;flex-direction:column;padding:0 8px 12px;padding-bottom:max(12px,env(safe-area-inset-bottom));font-size:13px;line-height:1.45;min-height:0}
+#voice-panel header{height:44px;flex:none;gap:6px}#voice-heading{font-size:16px}#voice-cancel{min-height:44px;min-width:44px;font-size:12px}
+#voice-content{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere;padding:3px 0 8px}
+#voice-state{color:#9feab9}#voice-transcript{margin-top:8px;color:#f5f7f5}#voice-language{color:#a0aaa3;font-size:11px;margin-top:4px}
+#voice-notice{font-size:11px;color:#a6b5ab;margin:10px 0 4px}
+#voice-record{min-height:44px;flex:none;background:#1ed760;color:#101211;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none}
+#voice-panel[data-phase="recording"] #voice-record{background:#ffb0a4}#voice-panel[data-phase="recording"] #voice-state{color:#ffb0a4}
+#voice-panel[data-phase="error"] #voice-state{color:#ffb0a4}
+#voice-results button{display:block;min-height:48px;width:100%;text-align:left;border:1px solid #536159;padding:6px 8px;margin:8px 0;font-size:12px;overflow-wrap:anywhere}
+#voice-results strong,#voice-results span{display:block}#voice-results span{font-size:11px;color:#a6b5ab}
