@@ -6,6 +6,7 @@ const types = { 'index.html': 'text/html', 'style.css': 'text/css', 'app.mjs': '
 const assets = {};
 types['i18n.mjs'] = 'text/javascript';
 types['voice.mjs'] = 'text/javascript';
+types['screen-wake.mjs'] = 'text/javascript';
 types['rabbit-test.html'] = 'text/html';
 types['rabbit-test.css'] = 'text/css';
 for (const name of ['rabbit-test.mjs', 'rabbit-probe.mjs', 'local-speech.mjs', 'local-asr-worker.mjs', 'song-request.mjs']) types[name] = 'text/javascript';
