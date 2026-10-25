@@ -8,13 +8,13 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self'; img-src 'self' data: https://i.scdn.co; connect-src 'self' https://accounts.spotify.com https://api.spotify.com https://lrclib.net https://api.lyrics.ovh https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co; object-src 'none'; base-uri 'none'; form-action 'self'">
   <title>R1 Spotify</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23101211'/%3E%3Cpath d='M12 7v18M20 7v18' stroke='%231ed760' stroke-width='5'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="./style.css?v=20261025-r32">
+  <link rel="stylesheet" href="./style.css?v=20261025-r33">
 </head>
 <body>
   <!-- 작은 화면에서도 아트와 곡 정보를 함께 확인할 수 있도록 구성합니다. -->
   <main id="app">
     <section id="player-view" class="view player">
-      <header><a id="spotify-link" href="https://open.spotify.com" target="_blank" rel="noopener noreferrer">Spotify</a><button id="voice-open" class="icon" type="button" aria-label="말로 노래 찾기" disabled>말로 노래 찾기</button><button id="settings-button" class="icon" aria-label="연결 설정">···</button></header>
+      <header><a id="spotify-link" href="https://open.spotify.com" target="_blank" rel="noopener noreferrer">Spotify</a><button id="voice-open" class="icon" type="button" aria-label="노래 찾기" disabled>노래 찾기</button><button id="settings-button" class="icon" aria-label="연결 설정">···</button></header>
       <button id="art-button" aria-label="현재 곡 가사 보기" disabled>
         <img id="cover" alt="" hidden>
         <span id="empty-art"><span class="empty-symbol" aria-hidden="true">♫</span><span id="empty-message">Spotify를 연결해 주세요.</span><span class="empty-action">연결 설정</span></span>
@@ -51,9 +51,9 @@
       <p>로그인 후 같은 Spotify 계정의 휴대폰·PC·스피커에서 음악을 재생해 주세요.</p>
       <details><summary>권한 오류가 나면?</summary><p>본인 Spotify 앱의 Users Management에서 로그인할 계정이 허용되어 있는지 확인합니다. 필요하면 Add new user에 본인 이름과 Spotify 이메일을 등록합니다. Premium과 재생 기기 제한도 확인해 주세요.</p></details>
       <details><summary>조작 안내</summary><p>앨범아트 왼쪽으로 밀기: 다음 곡<br>앨범아트 오른쪽으로 밀기: 이전 곡<br>래빗 버튼 한 번: 재생·일시정지<br>앨범아트 누르기: 가사<br>재생 화면 휠 위/아래: 볼륨 +5%/-5%<br>가사·설정 화면 휠: 탐색<br>가사 화면 좌우로 밀기: 재생 화면</p><p>‘현재 가사 따라가기’를 체크하면 재생 위치로 이동하고, 해제하면 자유롭게 탐색할 수 있습니다. 휠·터치 탐색 시 체크가 해제됩니다. 서버에 Spotify 가사 연결을 설정했다면 기본 가사를 먼저 확인하고, 없으면 외부 제공처를 조회합니다. 한국어는 벅스를 우선하고, 다른 언어는 LRCLIB을 우선합니다. 가사는 원문으로 표시하며 시간 정보가 있는 곡만 따라갑니다.</p></details>
-      <details><summary>말로 노래 찾기</summary><p>우측 버튼을 누른 채 “아이유의 밤편지 틀어줘”라고 말하고 놓으세요. 말한 내용으로 Spotify에서 노래를 찾고, 후보가 나오면 재생할 노래를 눌러 주세요.</p><p>마이크는 앱을 열 때 자동으로 연결합니다. 음성 인식 기능이 준비 중이어도 먼저 녹음할 수 있으며, 버튼을 놓은 뒤 자동으로 처리합니다.</p><p>Whisper가 기기에서 음성을 인식하고 Spotify에서 곡을 직접 검색합니다. 곡 정보가 불확실하면 후보에서 선택합니다.</p><p>첫 사용 시 마이크 권한을 허용해 주세요. 이후 마이크 연결을 재사용하며 버튼을 누를 때만 녹음합니다. 앱을 떠나거나 연결을 해제하면 마이크 연결도 닫습니다.</p><p>모델과 실행 파일 약 65MB는 처음 내려받습니다. 준비된 모델과 저장된 파일을 재사용하므로 말할 때마다 다시 내려받지 않습니다. API 키는 필요하지 않습니다.</p></details>
+      <details><summary>노래 찾기</summary><p>우측 버튼을 누른 채 “아이유의 밤편지 틀어줘”라고 말하고 놓으세요. 말한 내용으로 Spotify에서 노래를 찾고, 후보가 나오면 재생할 노래를 눌러 주세요.</p><p>마이크는 앱을 열 때 자동으로 연결합니다. 음성 인식 기능이 준비 중이어도 먼저 녹음할 수 있으며, 버튼을 놓은 뒤 자동으로 처리합니다.</p><p>Whisper가 기기에서 음성을 인식하고 Spotify에서 곡을 직접 검색합니다. 곡 정보가 불확실하면 후보에서 선택합니다.</p><p>첫 사용 시 마이크 권한을 허용해 주세요. 이후 마이크 연결을 재사용하며 버튼을 누를 때만 녹음합니다. 앱을 떠나거나 연결을 해제하면 마이크 연결도 닫습니다.</p><p>모델과 실행 파일 약 65MB는 처음 내려받습니다. 준비된 모델과 저장된 파일을 재사용하므로 말할 때마다 다시 내려받지 않습니다. API 키는 필요하지 않습니다.</p></details>
       <details><summary>기기 확인</summary><p id="volume-support">재생 기기 정보를 기다리고 있습니다.</p><p id="input-status">휠 입력을 기다리고 있습니다.</p><p id="viewport-status"></p><p id="storage-status">로그인 유지 상태를 확인하고 있습니다.</p></details>
-      <p class="fine">버전 20261025-r32 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.</p>
+      <p class="fine">버전 20261025-r33 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.</p>
     </section>
     <section id="pair-view" class="view settings" hidden>
       <header><h2>휴대폰으로 설정</h2><button id="pair-back" class="icon" type="button">닫기</button></header>
@@ -66,7 +66,7 @@
       <p id="pair-message" role="status"></p><button id="pair-new" type="button">새 코드 만들기</button>
     </section>
     <section id="voice-panel" role="dialog" aria-modal="true" aria-labelledby="voice-heading" data-phase="idle" hidden>
-      <header><h2 id="voice-heading">말로 노래 찾기</h2><button id="voice-cancel" type="button">닫기</button></header>
+      <header><h2 id="voice-heading">노래 찾기</h2><button id="voice-cancel" type="button">닫기</button></header>
       <div id="voice-content">
         <p id="voice-state" role="status" aria-live="polite">마이크 연결 중</p>
         <p id="voice-recording" hidden><span class="recording-dot" aria-hidden="true"></span><span>녹음 중</span> <span id="voice-elapsed">0:00</span></p>
@@ -83,6 +83,6 @@
       <button id="voice-record" type="button" aria-pressed="false" disabled>마이크 연결 중…</button>
     </section>
   </main>
-  <script type="module" src="./app.mjs?v=20261025-r32"></script>
+  <script type="module" src="./app.mjs?v=20261025-r33"></script>
 </body>
 </html>

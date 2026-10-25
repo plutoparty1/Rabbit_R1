@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r32`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r33`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,12 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r33 label and microphone guidance / 이름과 마이크 안내
+
+The feature name is shortened to “노래 찾기” / “Find a song” in the entry button, panel title and settings. The microphone retry message now points to the on-screen Retry microphone button and says to choose Allow only if a permission prompt appears. A 30-second unanswered microphone request has its own no-response message instead of being presented as a permission denial. No Rabbit-specific browser settings menu or permission-reset API was confirmed; the change does not grant permissions or fix an unobserved device restriction.
+
+이름을 ‘노래 찾기’로 줄였습니다. 마이크 접근 오류에서는 화면의 ‘마이크 다시 준비’를 누르고 허용 창이 뜨는 경우에만 ‘허용’을 선택하도록 안내합니다. 30초 동안 응답이 없는 경우는 별도 문구로 표시하며 권한 거부로 단정하지 않습니다. 래빗의 별도 브라우저 권한 메뉴나 권한 초기화 API는 확인하지 못했습니다. 이 변경이 기기의 권한을 부여하거나 확인되지 않은 접근 제한을 해제하는 것은 아닙니다.
 
 ## r32 song selection and clear labels / 곡 선택과 기능 안내
 
@@ -155,7 +161,7 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
-For the main player, open `?v=20261025-r32` and leave the physical button released while the microphone connects. Allow access if requested, or tap the retry control once after a rejected attempt. In “Find by voice,” once the microphone is connected, make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. Select a candidate and check that its title and the displayed playback device match actual Spotify playback; an unconfirmed request must retain the list and show the reason. / 재생 화면 r32에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘말로 노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 자동 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다. 후보를 선택한 뒤 곡명과 표시된 기기가 실제 Spotify 재생과 맞는지 확인합니다. 확인되지 않은 요청에는 이유와 후보가 남아야 합니다.
+For the main player, open `?v=20261025-r33` and leave the physical button released while the microphone connects. Allow access if requested, or tap the retry control once after a rejected attempt. In “Find a song,” once the microphone is connected, make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. Select a candidate and check that its title and the displayed playback device match actual Spotify playback; an unconfirmed request must retain the list and show the reason. / 재생 화면 r33에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 자동 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다. 후보를 선택한 뒤 곡명과 표시된 기기가 실제 Spotify 재생과 맞는지 확인합니다. 확인되지 않은 요청에는 이유와 후보가 남아야 합니다.
 
 The separate diagnostic flow remains:
 
@@ -180,7 +186,7 @@ A successful transcript establishes only the tested device/language/request. Con
 
 The main player prepares the model, microphone and paused recorder automatically before a hold. Once the microphone is ready, hold, speak and release (60-second stuck-button ceiling), even if the model is still preparing. The user does not hold during microphone preparation. The separate diagnostic page retains an explicit preparation control for isolating model loading.
 
-재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 마이크 준비 동안 버튼을 누를 필요가 없으며, ‘말로 노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
+재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 마이크 준비 동안 버튼을 누를 필요가 없으며, ‘노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
 
 The retained Gemini module is a developer-only legacy option. The r25 default player does not call `/api/voice/config` or `/api/voice/search`; merely setting Gemini secrets does not select it.
 

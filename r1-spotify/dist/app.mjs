@@ -1,12 +1,12 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r32';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r32';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r32';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r32';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r32';
-import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r32';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r33';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r33';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r33';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r33';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r33';
+import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r33';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r32';
+import { setupPairing } from './pair-device.mjs?v=20261025-r33';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -311,7 +311,7 @@ function updateVoiceWake() {
 function renderVoiceAvailability() {
   if (!voiceController) return;
   const ready = voiceReady();
-  const label = '말로 노래 찾기';
+  const label = '노래 찾기';
   $('voice-open').textContent = t(label);
   $('voice-open').dataset.ready = String(ready);
   $('voice-open').setAttribute('aria-label', t(label));
@@ -326,7 +326,7 @@ function renderVoice(state = voiceController.state) {
   voiceWasActive = active;
   const ready = voiceReady();
   const idlePresentation = voiceMicrophoneRetry
-    ? ['마이크 준비 필요', voiceMicrophoneMessage || '브라우저의 마이크 권한을 허용한 뒤 한 번 눌러 다시 준비하세요.', '준비 중…']
+    ? ['마이크 연결 필요', voiceMicrophoneMessage || '아래 ‘마이크 다시 준비’를 누르세요. 허용 창이 뜨면 ‘허용’을 선택하세요.', '준비 중…']
     : voiceModelError ? ['노래 검색 준비 실패', voiceModelError, ready ? '누르고 다시 시도' : '준비 중…']
     : ready ? ['누른 채 곡명을 말하세요', '우측 버튼을 누른 채 “아이유의 밤편지 틀어줘”라고 말하고 놓으세요.', '누른 채 곡명 말하기']
     : ['마이크 연결 중', '앱이 자동으로 마이크를 연결합니다. 버튼은 놓아도 됩니다.', '마이크 연결 중…'];

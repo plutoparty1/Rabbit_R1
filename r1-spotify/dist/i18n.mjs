@@ -5,7 +5,7 @@ export function getLocale(source = globalThis.navigator) {
 }
 
 const english = {
-  '말로 노래 찾기': 'Find by voice',
+  '노래 찾기': 'Find a song',
   '노래 재생 확인 중': 'Checking playback',
   '선택한 곡이 Spotify에서 재생되는지 확인하고 있습니다.': 'Checking that the selected song is playing on Spotify.',
   '재생할 Spotify 기기가 없습니다. 휴대폰이나 PC에서 Spotify를 열고 곡을 한 번 재생한 뒤, 아래 곡을 다시 눌러 주세요.': 'No Spotify playback device is available. Open Spotify on your phone or computer, play a song once, then tap the song below again.',
@@ -72,11 +72,13 @@ const english = {
   '음성 준비 실패': 'Voice setup failed',
   '마이크 준비 필요': 'Microphone setup needed',
   '마이크 다시 준비': 'Retry microphone',
-  '브라우저의 마이크 권한을 허용한 뒤 ‘마이크 다시 준비’를 한 번 누르세요.': 'Allow microphone access in the browser, then tap Retry microphone once.',
+  '마이크를 연결하지 못했습니다. 아래 ‘마이크 다시 준비’를 누르세요. 허용 창이 뜨면 ‘허용’을 선택하세요.': 'Could not connect the microphone. Tap Retry microphone below. If a permission prompt appears, choose Allow.',
+  '마이크 연결 응답이 없습니다. 아래 ‘마이크 다시 준비’를 한 번 누르세요.': 'The microphone did not respond. Tap Retry microphone below once.',
+  '마이크 연결 필요': 'Microphone connection needed',
   '마이크를 준비하지 못했습니다. 화면에서 다시 준비를 눌러 주세요.': 'Could not prepare the microphone. Tap Retry microphone.',
   '녹음이 취소되었습니다. 준비되면 다시 말해 주세요.': 'Recording cancelled. Hold again when ready.',
   '준비 중…': 'Preparing…',
-  '브라우저의 마이크 권한을 허용한 뒤 한 번 눌러 다시 준비하세요.': 'Allow microphone access in the browser, then tap once to retry setup.',
+  '아래 ‘마이크 다시 준비’를 누르세요. 허용 창이 뜨면 ‘허용’을 선택하세요.': 'Tap Retry microphone below. If a permission prompt appears, choose Allow.',
   '버튼을 놓아도 됩니다. 앱이 자동으로 준비합니다.': 'Release the button. The app prepares automatically.',
   '버튼을 놓아도 됩니다. 준비가 끝난 뒤 다시 누르세요.': 'Release the button. Hold again after setup finishes.',
   '우측 버튼을 누른 채 말하고 놓으세요.': 'Hold the right button, speak, then release.',
@@ -224,7 +226,7 @@ const english = {
 "휴대폰에서 Client ID를 보내 주세요.": "Send your Client ID from your phone.",
 "연결 코드를 만들고 있습니다.": "Creating a connection code…",
 "Client ID를 받았습니다. 기기 사용 방식을 선택하고 로그인해 주세요.": "Client ID received. Choose a device mode and log in.",
-"버전 20261025-r32 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r32 · Disconnect removes saved login data.",
+"버전 20261025-r33 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r33 · Disconnect removes saved login data.",
   '이 기기에 저장된 Client ID 불러오기': 'Use the Client ID saved on this device',
   '기존 Client ID를 불러왔습니다. 로그인 버튼을 눌러 주세요.': 'Previous Client ID restored. Select the login button.',
   '버전 20261018-r19 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r19 · Disconnect removes saved login data.',

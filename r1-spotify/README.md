@@ -150,7 +150,7 @@ The user reported Rabbit AI connection success, a Web Speech timeout and a 20,26
 
 ### Request songs in the player
 
-The player button, panel and settings call this feature **Find by voice**. The button keeps that name; microphone connection, listening, transcription, Spotify search and playback confirmation appear as separate statuses inside the panel.
+The player button, panel and settings call this feature **Find a song**. The button keeps that name; microphone connection, listening, transcription, Spotify search and playback confirmation appear as separate statuses inside the panel.
 
 1. Sign in to Spotify and start playback on another device with the same account. On connected app startup, the model, microphone and recorder prepare automatically before waiting for Spotify playback data. **Leave the button released while the microphone prepares.** Allow the browser's microphone permission prompt if shown. If automatic access is rejected, use the on-screen permission/retry control once; no sustained press is required.
 2. **Once the microphone is ready, hold the side button, speak, and release.** Recording is available even while the recognition model is still preparing. The prepared recorder resumes, and the red indicator/timer confirms recording. After release, recognition waits for any remaining model setup before searching; there is no live transcript while holding. Pressing before microphone preparation finishes does not queue a later recording: release the button, let microphone setup finish, then make a new press. The on-screen recording button follows the same sequence.
@@ -335,7 +335,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; r1 recording decode, local Whisper speed/accuracy and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r32`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r33`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

@@ -779,7 +779,7 @@ test('an ended idle track invalidates startup readiness without retry loops', as
 test('failed permission preparation is retryable by a tap and never opens a held session', async () => {
   const f = startupFixture();
   f.controller.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('private browser error'), { name: 'NotAllowedError' }); };
-  assert.equal(await f.controller.prepareMicrophone(), false); assert.match(f.controller.preparationState.message, /마이크 권한/);
+  assert.equal(await f.controller.prepareMicrophone(), false); assert.match(f.controller.preparationState.message, /마이크 다시 준비/);
   assert.doesNotMatch(f.controller.preparationState.message, /private/);
   assert.equal(await f.controller.begin(), false); assert.equal(f.controller.active, false);
   f.controller.mediaDevices.getUserMedia = async () => f.stream;

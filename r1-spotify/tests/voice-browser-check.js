@@ -112,7 +112,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.evaluate(() => { window.delayRecorderStart = false; window.finishRecorderStart(); });
       await tab.waitForFunction(() => window.recorderInstances.some(recorder => recorder.state === 'paused'));
       await tab.locator('#voice-open[data-ready="true"]').waitFor();
-      check(await tab.locator('#voice-open').innerText() === (locale === 'ko-KR' ? '말로 노래 찾기' : 'Find by voice'), 'Feature button lost its purpose during preparation');
+      check(await tab.locator('#voice-open').innerText() === (locale === 'ko-KR' ? '노래 찾기' : 'Find a song'), 'Feature button lost its purpose during preparation');
       check(await tab.evaluate(() => !window.mockRecognizer.ready && window.modelLoads === 1), 'Cold recognizer was not still loading');
       check(await tab.evaluate(() => window.recordingCount === 0 && window.micTracks[0].enabled && window.vibrations.length === 0), 'Released cold input started later or standby source is not live');
       finishPlayer(); await tab.locator('#title').filter({ hasText: '밤편지' }).waitFor();

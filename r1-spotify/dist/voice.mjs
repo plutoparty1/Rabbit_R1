@@ -155,9 +155,9 @@ export class VoiceController {
       job.resolve(success);
     };
     this.preparationUpdate('preparing');
-    const permissionMessage = '브라우저의 마이크 권한을 허용한 뒤 ‘마이크 다시 준비’를 한 번 누르세요.';
+    const permissionMessage = '마이크를 연결하지 못했습니다. 아래 ‘마이크 다시 준비’를 누르세요. 허용 창이 뜨면 ‘허용’을 선택하세요.';
     const failureMessage = '마이크를 준비하지 못했습니다. 화면에서 다시 준비를 눌러 주세요.';
-    job.timer = this.setTimer(() => job.finish(false, permissionMessage), 30000);
+    job.timer = this.setTimer(() => job.finish(false, '마이크 연결 응답이 없습니다. 아래 ‘마이크 다시 준비’를 한 번 누르세요.'), 30000);
     void (async () => {
       try {
         if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('unsupported');
