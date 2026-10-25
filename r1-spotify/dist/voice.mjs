@@ -1,6 +1,7 @@
-import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r29';
+import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r30';
 
-// Each hold owns its recorder/results; the microphone stays muted between holds.
+// Each hold owns its results. The player prearms a paused recorder at startup;
+// legacy callers retain a muted stream between holds.
 // Safety stop for a missing button-release event, not a normal speaking deadline.
 export const MAX_RECORDING_MS = 60000;
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
@@ -73,18 +74,27 @@ export function exactVoiceTrack(tracks, request) {
 }
 
 export class VoiceController {
-  constructor({ client, onChange = () => {}, canStart = () => true, deviceId = () => undefined,
+  constructor({ client, onChange = () => {}, onPreparationChange = () => {}, canStart = () => true, deviceId = () => undefined,
     mediaDevices = globalThis.navigator?.mediaDevices, Recorder = globalThis.MediaRecorder,
     fetcher = (...args) => globalThis.fetch(...args), setTimer = (...args) => setTimeout(...args), clearTimer = timer => clearTimeout(timer),
-    maxDuration = MAX_RECORDING_MS, maxBytes = MAX_AUDIO_BYTES, transcriber = null } = {}) {
-    Object.assign(this, { client, onChange, canStart, deviceId, mediaDevices, Recorder, fetcher, setTimer, clearTimer, maxDuration, maxBytes, transcriber });
+    maxDuration = MAX_RECORDING_MS, maxBytes = MAX_AUDIO_BYTES, transcriber = null, requirePreparedMicrophone = false } = {}) {
+    Object.assign(this, { client, onChange, onPreparationChange, canStart, deviceId, mediaDevices, Recorder, fetcher, setTimer, clearTimer, maxDuration, maxBytes, transcriber, requirePreparedMicrophone });
     this.session = null;
     this.microphoneStream = null;
     this.microphoneEpoch = 0;
+    this.preparationEnabled = false;
+    this.preparedMicrophone = null;
+    this.preparingMicrophone = null;
+    this.preparationState = { phase: 'idle', message: '' };
     this.state = { phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [] };
   }
   get active() { return Boolean(this.session); }
-  get microphoneReady() { return this.usableMicrophone(this.microphoneStream); }
+  get microphoneReady() {
+    if (this.requirePreparedMicrophone || this.preparationEnabled) return Boolean(this.preparedMicrophone?.recorder.state === 'paused' && this.usableMicrophone(this.preparedMicrophone.stream));
+    return this.usableMicrophone(this.microphoneStream);
+  }
+  get microphonePreparing() { return Boolean(this.preparingMicrophone); }
+  preparationUpdate(phase, message = '') { this.preparationState = { phase, message }; this.onPreparationChange(this.preparationState); }
   update(patch) { this.state = { ...this.state, ...patch }; this.onChange(this.state); }
   current(session) { return this.session === session && !session.abort.signal.aborted; }
   usableMicrophone(stream) {
@@ -104,22 +114,122 @@ export class VoiceController {
     this.muteMicrophone(stream);
     if (stream && (stream !== this.microphoneStream || !this.usableMicrophone(stream))) this.discardMicrophone(stream);
   }
+  stopPrepared(prepared) {
+    if (!prepared) return;
+    this.muteMicrophone(prepared.stream);
+    const recorder = prepared.recorder;
+    if (recorder) {
+      recorder.onstart = recorder.onpause = recorder.onresume = recorder.ondataavailable = recorder.onstop = recorder.onerror = null;
+      try { if (recorder.state !== 'inactive') recorder.stop(); } catch { this.discardMicrophone(prepared.stream); }
+    }
+    for (const [track, listener] of prepared.endedListeners || []) track.removeEventListener?.('ended', listener);
+    prepared.endedListeners = [];
+    prepared.chunks = [];
+    this.muteMicrophone(prepared.stream);
+  }
+  prepareMicrophone() {
+    this.preparationEnabled = true;
+    if (this.microphoneReady) return Promise.resolve(true);
+    if (this.preparingMicrophone) return this.preparingMicrophone.promise;
+    // A current hold owns the stream. Its stop callback prepares the next one.
+    if (this.session?.stream) return Promise.resolve(false);
+    this.stopPrepared(this.preparedMicrophone); this.preparedMicrophone = null;
+    const job = { epoch: this.microphoneEpoch, stream: null, recorder: null, chunks: [], bytes: 0, endedListeners: [], timer: null };
+    this.preparingMicrophone = job;
+    job.promise = new Promise(resolve => { job.resolve = resolve; });
+    const current = () => this.preparingMicrophone === job && this.preparationEnabled && job.epoch === this.microphoneEpoch;
+    job.finish = (success, message = '') => {
+      if (!current()) return;
+      this.clearTimer(job.timer); this.preparingMicrophone = null;
+      if (success) {
+        this.preparedMicrophone = job;
+        this.preparationUpdate('ready');
+      } else {
+        this.stopPrepared(job); this.discardMicrophone(job.stream);
+        this.preparationUpdate('error', message);
+      }
+      job.resolve(success);
+    };
+    this.preparationUpdate('preparing');
+    const permissionMessage = '브라우저의 마이크 권한을 허용한 뒤 ‘마이크 다시 준비’를 한 번 누르세요.';
+    const failureMessage = '마이크를 준비하지 못했습니다. 화면에서 다시 준비를 눌러 주세요.';
+    job.timer = this.setTimer(() => job.finish(false, permissionMessage), 30000);
+    void (async () => {
+      try {
+        if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('unsupported');
+        let stream = this.microphoneStream;
+        if (!this.usableMicrophone(stream)) {
+          this.discardMicrophone(stream);
+          stream = await this.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
+        }
+        if (!current()) { this.discardMicrophone(stream); return; }
+        job.stream = stream; this.microphoneStream = stream; this.muteMicrophone(stream);
+        if (!this.usableMicrophone(stream)) throw new Error('ended');
+        const mimeType = mimeTypes.find(type => this.Recorder.isTypeSupported?.(type));
+        const recorder = job.recorder = new this.Recorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 64000 });
+        if (typeof recorder.pause !== 'function' || typeof recorder.resume !== 'function') throw new Error('unsupported');
+        this.clearTimer(job.timer);
+        job.timer = this.setTimer(() => job.finish(false, failureMessage), RECORDER_START_TIMEOUT_MS);
+        recorder.ondataavailable = event => {
+          if (!current() && this.preparedMicrophone !== job) return;
+          if (!event.data?.size) return;
+          job.bytes += event.data.size;
+          if (job.bytes > this.maxBytes) { job.finish(false, failureMessage); return; }
+          // Retain muted startup chunks: the first one can contain container headers.
+          job.chunks.push(event.data);
+        };
+        recorder.onstart = () => {
+          if (!current()) return;
+          try { recorder.pause(); } catch { job.finish(false, failureMessage); }
+        };
+        recorder.onpause = () => {
+          if (!current()) return;
+          if (recorder.state !== 'paused' || !this.usableMicrophone(stream)) { job.finish(false, failureMessage); return; }
+          // A paused recorder gathers no data. Keep the source live so the browser
+          // does not repeatedly power down/reacquire the microphone between holds.
+          for (const track of stream.getAudioTracks?.() || stream.getTracks()) track.enabled = true;
+          job.finish(true);
+        };
+        const invalidated = () => {
+          if (current()) { job.finish(false, failureMessage); return; }
+          if (this.preparedMicrophone !== job) return;
+          this.preparedMicrophone = null; this.stopPrepared(job); this.discardMicrophone(stream);
+          this.preparationUpdate('error', failureMessage);
+        };
+        recorder.onerror = recorder.onstop = invalidated;
+        for (const track of stream.getAudioTracks?.() || stream.getTracks()) {
+          track.addEventListener?.('ended', invalidated, { once: true });
+          job.endedListeners.push([track, invalidated]);
+        }
+        recorder.start(250);
+      } catch (error) { if (current()) job.finish(false, ['NotAllowedError', 'SecurityError'].includes(error.name) ? permissionMessage : failureMessage); }
+    })();
+    return job.promise;
+  }
+  rearmMicrophone() { if (this.preparationEnabled && !this.microphoneReady && !this.preparingMicrophone) void this.prepareMicrophone(); }
   releaseMicrophone() {
     // Permission prompts cannot be aborted, so invalidate any late grant as well.
     this.microphoneEpoch++;
+    this.preparationEnabled = false;
+    const pending = this.preparingMicrophone; this.preparingMicrophone = null;
+    if (pending) { this.clearTimer(pending.timer); this.stopPrepared(pending); pending.resolve(false); }
+    this.stopPrepared(this.preparedMicrophone); this.preparedMicrophone = null;
     this.cancel();
     this.discardMicrophone();
+    this.preparationUpdate('idle');
   }
   cleanup(session) {
     this.clearTimer(session.timer);
     session.abort.abort();
+    this.muteMicrophone(session.stream);
     if (session.recorder) {
-      session.recorder.onstart = session.recorder.ondataavailable = session.recorder.onstop = session.recorder.onerror = null;
+      session.recorder.onstart = session.recorder.onpause = session.recorder.onresume = session.recorder.ondataavailable = session.recorder.onstop = session.recorder.onerror = null;
       try { if (session.recorder.state !== 'inactive') session.recorder.stop(); } catch { this.discardMicrophone(session.stream); }
     }
     this.parkMicrophone(session);
     session.chunks = [];
     if (session.processing) this.transcriber?.cancel?.();
+    if (!session.noRearm) this.rearmMicrophone();
   }
   cancel() {
     const previous = this.session;
@@ -145,6 +255,7 @@ export class VoiceController {
   }
   async begin() {
     if (this.active || !this.canStart()) return;
+    if (this.requirePreparedMicrophone || this.preparationEnabled) return this.beginPrepared();
     const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, started: false, device: this.deviceId(), microphoneEpoch: this.microphoneEpoch };
     this.session = session;
     this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [] });
@@ -202,7 +313,7 @@ export class VoiceController {
       session.recorder.onstop = () => {
         if (!this.current(session)) return;
         this.clearTimer(session.timer);
-        if (session.held || !this.microphoneReady) {
+        if (session.held || !this.usableMicrophone(stream)) {
           this.discardMicrophone(stream);
           this.fail(session, '녹음하지 못했습니다. 마이크 권한을 확인하고 다시 시도해 주세요.');
           return;
@@ -224,19 +335,71 @@ export class VoiceController {
         ? '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.' : error.message);
     }
   }
+  beginPrepared() {
+    if (!this.microphoneReady) {
+      this.update({ phase: 'idle', message: '음성을 자동으로 준비하고 있습니다. 버튼을 놓고 있어도 됩니다.', transcript: '', language: '', tracks: [] });
+      if (this.preparationState.phase !== 'error') void this.prepareMicrophone();
+      return false;
+    }
+    const prepared = this.preparedMicrophone;
+    this.preparedMicrophone = null;
+    for (const [track, listener] of prepared.endedListeners) track.removeEventListener?.('ended', listener);
+    prepared.endedListeners = [];
+    const session = { abort: new AbortController(), chunks: prepared.chunks, bytes: prepared.bytes, timer: null, held: true, started: false,
+      device: this.deviceId(), stream: prepared.stream, recorder: prepared.recorder };
+    this.session = session;
+    const stream = session.stream, recorder = session.recorder;
+    recorder.onstart = recorder.onpause = null;
+    const failCapture = () => {
+      if (!this.current(session)) return;
+      session.noRearm = true; this.discardMicrophone(stream);
+      this.preparationUpdate('error', '마이크를 준비하지 못했습니다. 화면에서 다시 준비를 눌러 주세요.');
+      this.fail(session, '녹음하지 못했습니다. 화면에서 다시 준비를 눌러 주세요.');
+    };
+    recorder.onresume = () => {
+      if (!this.current(session) || !session.held || session.started) return;
+      if (recorder.state !== 'recording' || !this.usableMicrophone(stream)) { failCapture(); return; }
+      this.clearTimer(session.timer); session.started = true;
+      session.timer = this.setTimer(() => this.release(), this.maxDuration);
+      this.update({ phase: 'recording', message: '지금 말하세요', transcript: '', language: '', tracks: [] });
+    };
+    recorder.ondataavailable = event => {
+      if (!this.current(session) || !event.data?.size) return;
+      session.bytes += event.data.size;
+      if (session.bytes > this.maxBytes) { this.fail(session, '녹음 크기가 너무 큽니다. 더 짧게 말해 주세요.'); return; }
+      session.chunks.push(event.data);
+    };
+    recorder.onerror = failCapture;
+    recorder.onstop = () => {
+      if (!this.current(session)) return;
+      this.clearTimer(session.timer);
+      if (session.held || !session.started || !this.usableMicrophone(stream)) { failCapture(); return; }
+      this.parkMicrophone(session); this.rearmMicrophone();
+      void this.process(session);
+    };
+    this.update({ phase: 'preparing', message: '녹음을 시작합니다.', transcript: '', language: '', tracks: [] });
+    session.timer = this.setTimer(failCapture, RECORDER_START_TIMEOUT_MS);
+    try {
+      // Recorder startup and permission have already completed during app preparation.
+      recorder.resume();
+      for (const track of stream.getAudioTracks?.() || stream.getTracks()) track.enabled = true;
+    } catch { failCapture(); }
+    return true;
+  }
   release() {
     const session = this.session;
     if (!session || !session.held) return;
     session.held = false;
     if (this.state.phase === 'preparing') {
       this.cancel();
-      this.update({ message: '녹음 전에 버튼을 놓았습니다. 다시 누르고 “지금 말하세요”를 기다리세요.' });
+      this.update({ message: this.requirePreparedMicrophone || this.preparationEnabled ? '녹음이 취소되었습니다. 준비되면 다시 말해 주세요.' : '녹음 전에 버튼을 놓았습니다. 다시 누르고 “지금 말하세요”를 기다리세요.' });
       return;
     }
     if (this.state.phase !== 'recording') return;
     this.clearTimer(session.timer);
     this.update({ phase: 'transcribing', message: '언어를 감지하고 곡을 찾고 있습니다.' });
     const stream = session.stream;
+    this.muteMicrophone(stream);
     session.timer = this.setTimer(() => {
       if (!this.current(session)) return;
       this.discardMicrophone(stream);

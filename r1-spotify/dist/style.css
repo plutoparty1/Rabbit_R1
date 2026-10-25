@@ -1075,7 +1075,7 @@
 body.phone-setup{height:auto;max-height:none;min-height:100vh;overflow:auto;padding:24px 16px}#phone-app{width:100%;max-width:480px;height:auto;overflow:visible;padding:0 0 24px}#phone-app h1{font-size:26px;line-height:1.3;margin:12px 0}#phone-app>p{margin:12px 0}#phone-app .phone-brand{font-size:12px;font-weight:700;letter-spacing:2px;color:#1ed760}#phone-app details{margin:20px 0}#phone-app label{font-size:14px}#phone-app input{font-size:16px}#phone-app button{min-height:44px;border:1px solid #536159;padding:8px 12px}#phone-app button.primary{border:0}#phone-app h2{font-size:20px}#phone-suffix{font-size:26px;letter-spacing:2px;color:#1ed760}#phone-app #phone-message{color:#b5efc8}
 
 /* The voice panel keeps its hold and close buttons reachable at 240×282. */
-header #voice-open{margin-left:auto;font-size:11px;padding:0 7px;color:#9feab9}
+header #voice-open{margin-left:auto;font-size:10px;padding:0 5px;color:#d2b77d;white-space:nowrap}header #voice-open[data-ready="true"]{color:#9feab9}
 #voice-panel{position:absolute;inset:0;z-index:10;background:#101211;display:flex;flex-direction:column;padding:0 8px 12px;padding-bottom:max(12px,env(safe-area-inset-bottom));font-size:13px;line-height:1.45;min-height:0}
 #voice-panel header{height:44px;flex:none;gap:6px}#voice-heading{font-size:16px}#voice-cancel{min-height:44px;min-width:44px;font-size:12px}
 #voice-content{min-height:0;flex:1;overflow:auto;overscroll-behavior:contain;overflow-wrap:anywhere;padding:3px 0 8px}
@@ -1083,11 +1083,11 @@ header #voice-open{margin-left:auto;font-size:11px;padding:0 7px;color:#9feab9}
 #voice-recording{color:#ffb3ad;font-size:12px;font-weight:700;margin:0 0 7px;font-variant-numeric:tabular-nums}.recording-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff665c;margin-right:5px}#voice-elapsed{margin-left:5px}
 #voice-notice{font-size:11px;color:#a6b5ab;margin:10px 0 4px}
 #voice-record{min-height:44px;flex:none;background:#303935;border:1px solid #75827b;color:#f5f7f5;font-size:13px;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none}
-#voice-panel[data-phase="preparing"] #voice-state{color:#ffd37a}#voice-panel[data-phase="preparing"] #voice-record{background:#4c3c22;border-color:#b18a48;color:#ffe3ad}
+#voice-panel[data-phase="preparing"] #voice-state,#voice-panel[data-phase="warming"] #voice-state{color:#ffd37a}#voice-panel[data-phase="preparing"] #voice-record,#voice-panel[data-phase="warming"] #voice-record{background:#4c3c22;border-color:#b18a48;color:#ffe3ad}
 #voice-panel[data-phase="recording"] #voice-record{background:#a42b24;border-color:#ff8a80;color:#fff}#voice-panel[data-phase="recording"] #voice-state{color:#ff8a80}
 #voice-panel[data-phase="transcribing"] #voice-state,#voice-panel[data-phase="analyzing"] #voice-state,#voice-panel[data-phase="searching"] #voice-state{color:#b6d7ff}
 #voice-panel[data-phase="error"] #voice-state{color:#ffb0a4}
 #voice-results button{display:block;min-height:48px;width:100%;text-align:left;border:1px solid #536159;padding:6px 8px;margin:8px 0;font-size:12px;overflow-wrap:anywhere}
 #voice-results strong,#voice-results span{display:block}#voice-results span{font-size:11px;color:#a6b5ab}
-#voice-prepare { width: 100%; min-height: 44px; border: 1px solid #536159; padding: 6px 8px; }
+#voice-prepare,#voice-enable { width: 100%; min-height: 44px; border: 1px solid #536159; padding: 6px 8px; }
 #voice-model-status,#voice-wake-status { font-size: 10px; line-height: 1.4; margin: 6px 0; color:#a6b5ab; }

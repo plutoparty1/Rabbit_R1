@@ -9,7 +9,7 @@ function fixture(options = {}) {
   const calls = [], timers = new Map(), changes = [], recorders = [];
   let stopped = 0, captures = 0, timerId = 0;
   const makeStream = () => {
-    const track = { kind: 'audio', enabled: true, readyState: 'live', stop() { stopped++; this.readyState = 'ended'; } };
+    const track = Object.assign(new EventTarget(), { kind: 'audio', enabled: true, readyState: 'live', stop() { stopped++; this.readyState = 'ended'; } });
     return { get active() { return track.readyState === 'live'; }, getTracks: () => [track], getAudioTracks: () => [track] };
   };
   const stream = makeStream();
@@ -17,6 +17,8 @@ function fixture(options = {}) {
     static isTypeSupported(type) { return type === 'audio/webm;codecs=opus'; }
     constructor(stream, config) { this.stream = stream; this.state = 'inactive'; this.mimeType = config.mimeType; recorders.push(this); }
     start() { this.state = 'recording'; queueMicrotask(() => this.onstart?.()); }
+    pause() { this.state = 'paused'; queueMicrotask(() => this.onpause?.()); }
+    resume() { this.state = 'recording'; queueMicrotask(() => this.onresume?.()); }
     stop() {
       this.state = 'inactive';
       queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['audio'], { type: this.mimeType }) }); this.onstop?.(); });
@@ -532,4 +534,137 @@ test('invalid local recognition responses do not report a Rabbit AI failure', as
   assert.match(f.controller.state.message, /녹음/);
   assert.doesNotMatch(f.controller.state.message, /래빗 AI/);
   assert.equal(f.calls.length, 0);
+});
+
+function startupFixture(options) {
+  const f = keylessFixture(options); f.controller.requirePreparedMicrophone = true;
+  f.preparationChanges = []; f.controller.onPreparationChange = state => f.preparationChanges.push(state);
+  return f;
+}
+
+test('startup prepares one paused recorder with a ready source but no held session or transcription', async () => {
+  const f = startupFixture();
+  const first = f.controller.prepareMicrophone(), second = f.controller.prepareMicrophone();
+  assert.equal(first, second); assert.equal(f.controller.microphonePreparing, true);
+  assert.equal(await first, true);
+  assert.equal(f.controller.microphoneReady, true); assert.equal(f.controller.active, false);
+  assert.equal(f.recorders[0].state, 'paused'); assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+  assert.deepEqual(f.localCalls, []); assert.equal(f.captures(), 1);
+  assert.deepEqual(f.preparationChanges.map(state => state.phase), ['preparing', 'ready']);
+  f.controller.releaseMicrophone(); assert.equal(f.timers.size, 0);
+});
+
+test('a press during startup returns immediately and cannot turn into a late recording', async () => {
+  const permission = deferred(), f = startupFixture({ fixture: { permission: permission.promise } });
+  const preparation = f.controller.prepareMicrophone();
+  assert.equal(await f.controller.begin(), false); assert.equal(f.controller.active, false);
+  f.controller.release(); f.controller.cancel();
+  permission.resolve(f.stream); assert.equal(await preparation, true);
+  assert.equal(f.controller.microphoneReady, true); assert.equal(f.controller.active, false);
+  assert.equal(f.recorders[0].state, 'paused'); assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+  assert.equal(f.changes.some(state => state.phase === 'recording'), false);
+  f.controller.releaseMicrophone();
+});
+
+test('three startup-prepared holds reuse the stream and keep startup header chunks per utterance', async () => {
+  const f = startupFixture(); await f.controller.prepareMicrophone();
+  for (let hold = 0; hold < 3; hold++) {
+    const recorder = f.controller.preparedMicrophone.recorder;
+    recorder.ondataavailable({ data: new Blob([`header${hold}`]) });
+    assert.equal(await f.controller.begin(), true);
+    assert.equal(f.controller.state.phase, 'recording'); assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+    recorder.ondataavailable({ data: new Blob([`hold${hold}`]) });
+    f.controller.release(); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+    for (let i = 0; i < 6; i++) await tick();
+    assert.equal(f.controller.state.phase, 'done'); assert.equal(f.controller.microphoneReady, true);
+    assert.equal(f.controller.preparedMicrophone.recorder.state, 'paused');
+  }
+  assert.equal(f.captures(), 1); assert.equal(f.recorders.length, 4);
+  assert.deepEqual(await Promise.all(f.localCalls.filter(call => call[0] === 'audio').map(call => call[1].text())), ['header0hold0audio', 'header1hold1audio', 'header2hold2audio']);
+  f.controller.releaseMicrophone(); assert.equal(f.timers.size, 0);
+});
+
+test('startup waits for the pause event and times out without falsely announcing readiness', async () => {
+  for (const operation of ['start', 'pause']) {
+    const f = startupFixture(), GoodRecorder = f.controller.Recorder;
+    f.controller.Recorder = class extends GoodRecorder {
+      start() { this.state = 'recording'; if (operation !== 'start') queueMicrotask(() => this.onstart?.()); }
+      pause() { this.state = 'paused'; }
+    };
+    const pending = f.controller.prepareMicrophone(); await tick();
+    const late = operation === 'start' ? f.recorders[0].onstart : f.recorders[0].onpause;
+    assert.equal(f.controller.microphoneReady, false); assert.equal(f.stream.getAudioTracks()[0].enabled, false);
+    f.fire(RECORDER_START_TIMEOUT_MS); assert.equal(await pending, false);
+    late(); await tick();
+    assert.equal(f.controller.preparationState.phase, 'error'); assert.equal(f.controller.microphoneReady, false);
+    assert.equal(f.controller.active, false); assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended');
+    assert.equal(f.timers.size, 0);
+  }
+});
+
+test('cancelling a pending resume ignores late events and rearms independently', async () => {
+  const f = startupFixture(); await f.controller.prepareMicrophone();
+  const old = f.controller.preparedMicrophone.recorder;
+  old.resume = function () { this.state = 'recording'; };
+  await f.controller.begin(); const lateResume = old.onresume;
+  f.controller.cancel(); await tick();
+  assert.equal(f.controller.microphoneReady, true); assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+  await f.controller.begin(); lateResume(); await tick();
+  assert.equal(f.controller.state.phase, 'recording'); assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+  assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 0);
+  f.controller.releaseMicrophone(); assert.equal(f.timers.size, 0);
+});
+
+test('startup teardown rejects late grants and does not rearm until explicit foreground preparation', async () => {
+  const permission = deferred(), f = startupFixture({ fixture: { permission: permission.promise } });
+  const first = f.controller.prepareMicrophone(); f.controller.releaseMicrophone();
+  assert.equal(await first, false); assert.equal(f.controller.microphonePreparing, false);
+  permission.resolve(f.stream); await tick();
+  assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended'); assert.equal(f.recorders.length, 0);
+  assert.equal(f.controller.preparationState.phase, 'idle'); assert.equal(f.timers.size, 0);
+  const newStream = f.makeStream(); f.controller.mediaDevices.getUserMedia = async () => newStream;
+  assert.equal(await f.controller.prepareMicrophone(), true);
+  f.controller.releaseMicrophone(); await tick();
+  assert.equal(f.recorders.length, 1); assert.equal(newStream.getAudioTracks()[0].readyState, 'ended');
+});
+
+test('an ended idle track invalidates startup readiness without retry loops', async () => {
+  const f = startupFixture(); await f.controller.prepareMicrophone();
+  const track = f.stream.getAudioTracks()[0]; track.readyState = 'ended'; track.dispatchEvent(new Event('ended'));
+  assert.equal(f.controller.microphoneReady, false); assert.equal(f.controller.preparationState.phase, 'error');
+  await tick(); assert.equal(f.captures(), 1); assert.equal(f.controller.active, false);
+  assert.equal(await f.controller.prepareMicrophone(), true); assert.equal(f.captures(), 2);
+  f.controller.releaseMicrophone();
+});
+
+test('failed permission preparation is retryable by a tap and never opens a held session', async () => {
+  const f = startupFixture();
+  f.controller.mediaDevices.getUserMedia = async () => { throw Object.assign(new Error('private browser error'), { name: 'NotAllowedError' }); };
+  assert.equal(await f.controller.prepareMicrophone(), false); assert.match(f.controller.preparationState.message, /마이크 권한/);
+  assert.doesNotMatch(f.controller.preparationState.message, /private/);
+  assert.equal(await f.controller.begin(), false); assert.equal(f.controller.active, false);
+  f.controller.mediaDevices.getUserMedia = async () => f.stream;
+  assert.equal(await f.controller.prepareMicrophone(), true); f.controller.releaseMicrophone();
+});
+
+test('teardown during a prepared hold closes the source and cannot silently rearm', async () => {
+  const f = startupFixture(); await f.controller.prepareMicrophone(); await f.controller.begin();
+  assert.equal(f.stream.getAudioTracks()[0].enabled, true);
+  f.controller.releaseMicrophone(); await tick();
+  assert.equal(f.stream.getAudioTracks()[0].enabled, false); assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended');
+  assert.equal(f.controller.active, false); assert.equal(f.controller.microphonePreparing, false);
+  assert.equal(f.controller.preparationState.phase, 'idle'); assert.equal(f.recorders.length, 1);
+  assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 0); assert.equal(f.timers.size, 0);
+});
+
+test('a stale startup grant cannot replace or mute a newer prepared source', async () => {
+  const f = startupFixture(), pending = deferred(), nextStream = f.makeStream(); let requests = 0;
+  f.controller.mediaDevices.getUserMedia = () => ++requests === 1 ? pending.promise : Promise.resolve(nextStream);
+  const old = f.controller.prepareMicrophone(); f.controller.releaseMicrophone();
+  await f.controller.prepareMicrophone();
+  pending.resolve(f.stream); await old; await tick();
+  assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended');
+  assert.equal(f.controller.microphoneReady, true); assert.equal(nextStream.getAudioTracks()[0].enabled, true);
+  assert.equal(nextStream.getAudioTracks()[0].readyState, 'live');
+  f.controller.releaseMicrophone();
 });
