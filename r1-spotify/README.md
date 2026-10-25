@@ -146,7 +146,19 @@ Recognition here uses the Web Speech API; it does not establish access to Rabbit
 
 Speech may be sent to the browser vendor's recognition service. Only an explicit button press sends the example or recognized text to Rabbit; speaker output and journal logging are not requested. Microphone-only mode discards audio and records only byte count and format. Copied reports exclude spoken text, raw AI replies and credentials. Cancel/page exit stops capture and invalidates late results; an already dispatched Rabbit server request cannot be recalled.
 
-Diagnostic version: `20261025-r23-test`. It uses the [documented Rabbit SDK](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) text LLM channel, without guessing undocumented native audio APIs. Automated checks simulate speech and Rabbit replies; actual r1 results will be recorded after user testing.
+Diagnostic version: `20261025-r24-test`. It uses the [documented Rabbit SDK](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) text LLM channel, without guessing undocumented native audio APIs. An r23 device trial reported a timeout and a listening indicator, but no final transcript or per-stage report was available to establish the failing stage. Automated checks simulate speech and Rabbit replies; they do not establish device success.
+
+After a timeout, check the new version label and retry with the **on-screen hold button** to compare against the physical side button. Recognition now captures one utterance at a time. A recognizer start event alone does not prove microphone input, detected speech or a transcript; the screen and report distinguish these events. Stage ③ cannot run without a final transcript. If recognition still fails, try **microphone recording only**, then share the stage, error code and last observed event, or copy the diagnostic report. Additional report fields contain only event names, counts and elapsed times.
+
+| Error code | Observed condition |
+| --- | --- |
+| `speech_start_timeout` | No recognition start event within 15 seconds |
+| `speech_result_timeout` | No final transcript or end event within 8 seconds after requesting stop |
+| `speech_interim_only` | Interim text arrived, but no final transcript was received |
+| `rabbit_no_response` | No Rabbit callback within 45 seconds |
+| `rabbit_unmatched_response` | A callback arrived, but no analysis matching the current request was found |
+
+Rabbit replies are checked in both documented `data` and `message` fields. Request ID matching remains required so a late reply from an earlier request cannot pass a new test. These timeout and diagnostic changes do not establish that a device's speech service issue has been resolved.
 
 ### Request songs with server speech recognition
 
@@ -314,7 +326,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; real r1 microphone permissions/recording, live multilingual recognition and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r23`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r24`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

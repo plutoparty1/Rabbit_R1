@@ -6,12 +6,12 @@
   <meta name="referrer" content="no-referrer">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>R1 · API 키 없는 실기 테스트</title>
-  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r23-test">
+  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r24-test">
 </head>
 <body>
   <main>
     <header><h1>래빗 음성 진단</h1><a href="./">‹ Spotify</a></header>
-    <p class="intro">API 키·Spotify 로그인 없이 테스트</p>
+    <p class="intro">API 키·Spotify 로그인 없이 테스트<br><span class="tag">진단 버전 20261025-r24-test</span></p>
     <nav class="jump-links" aria-label="테스트 단계로 이동"><a href="#rabbit-title">① AI</a><a href="#speech-title">② 음성</a><a href="#analyze-title">③ 분석</a><a href="#summary-title">결과</a></nav>
     <p class="notice">①·③: 문장을 래빗 서버로 전송<br>②: 브라우저 음성 서비스를 쓸 수 있음<br>Gemini·Spotify 요청 및 녹음 저장 없음</p>
 
@@ -25,7 +25,7 @@
 
     <section aria-labelledby="speech-title">
       <h2 id="speech-title">② 브라우저 음성 인식</h2>
-      <p>아래 버튼이나 래빗 옆 버튼을 누른 채 말하고 놓으세요. 최대 15초입니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
+      <p>아래 버튼이나 래빗 옆 버튼을 누른 채 한 문장만 말하고 놓으세요. 최대 15초입니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
       <label for="speech-language">인식 언어</label>
       <select id="speech-language">
         <option value="">브라우저 기본(자동 감지 보장 안 됨)</option>
@@ -41,6 +41,9 @@
       </select>
       <button id="capture-hold" type="button" class="primary hold" aria-pressed="false">누르고 말하기</button>
       <p id="speech-status" class="status" role="status">미실행</p>
+      <p id="speech-progress" class="fine">② 수신 신호: 아직 없음</p>
+      <p class="fine">“인식 서비스 시작”만으로 마이크 입력이나 음성 인식 성공이 확인되지는 않습니다.</p>
+      <p id="speech-guidance" class="guidance" hidden></p>
       <p id="microphone-status" class="status" role="status" hidden>미실행</p>
       <label for="transcript">인식 문장 · 이 화면에만 표시</label>
       <textarea id="transcript" rows="3" readonly placeholder="최종 인식 결과가 여기에 표시됩니다."></textarea>
@@ -55,6 +58,7 @@
       <h2 id="analyze-title">③ 인식 문장 분석</h2>
       <p>②의 문장을 확인한 뒤 직접 눌러 래빗 AI로 보냅니다. 옆 버튼을 놓는 것만으로 전송되지 않습니다.</p>
       <button id="rabbit-analyze" type="button" disabled>인식 문장으로 래빗 AI 분석</button>
+      <p id="analysis-disabled-reason" class="fine">③은 아직 실행되지 않았습니다. ②에서 최종 인식 문장을 받아야 누를 수 있습니다.</p>
       <p id="analysis-status" class="status" role="status">미실행</p>
       <p id="analysis-result" class="result" hidden></p>
     </section>
@@ -62,6 +66,8 @@
     <section aria-labelledby="summary-title">
       <h2 id="summary-title">테스트 결과</h2>
       <p id="summary" role="status">①과 ②를 먼저 실행해 주세요.</p>
+      <p id="stage-results" class="stage-results" aria-label="단계별 상태와 마지막 확인 신호"></p>
+      <p class="fine">복사가 어려우면 단계명·오류 코드·마지막 확인 신호만 알려 주세요.</p>
       <p class="fine">①·②·③ 성공은 API 키 없는 음성 → 래빗 AI 경로가 이 기기에서 동작했다는 뜻입니다. 곡명 정확성은 화면에서 확인해 주세요. 다국어 자동 감지와 Spotify 재생은 별도 확인이 필요합니다.</p>
       <details open>
         <summary>기기 기능 · 입력 수신</summary>
@@ -75,12 +81,12 @@
       <p id="copy-status" role="status"></p>
       <textarea id="report" rows="8" readonly hidden aria-label="복사할 진단 결과"></textarea>
     </section>
-    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r23-test</p></footer>
+    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r24-test</p></footer>
   </main>
   <aside id="active-controls" hidden aria-label="진행 중인 테스트">
     <p id="active-status" role="status">확인 중</p>
     <div><button id="capture-release" type="button">입력 종료</button><button id="cancel-test" type="button">취소</button></div>
   </aside>
-  <script type="module" src="./rabbit-test.mjs?v=20261025-r23-test"></script>
+  <script type="module" src="./rabbit-test.mjs?v=20261025-r24-test"></script>
 </body>
 </html>

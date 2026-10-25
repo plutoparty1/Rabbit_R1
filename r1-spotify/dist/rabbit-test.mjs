@@ -1,14 +1,29 @@
-import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r23-test';
+import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r24-test';
 
 const $ = id => document.getElementById(id);
-const VERSION = '20261025-r23-test';
+const VERSION = '20261025-r24-test';
 const counts = { hardware: { longPressStart: 0, longPressEnd: 0, sideClick: 0, scrollUp: 0, scrollDown: 0 }, screen: { press: 0, release: 0, cancel: 0 } };
-const fresh = () => ({ state: 'not-run', code: '', attempts: 0, durationMs: 0, outputChars: 0 });
+const fresh = () => ({ state: 'not-run', code: '', attempts: 0, durationMs: 0, outputChars: 0, eventCounts: {}, timeline: [] });
 const results = { rabbit: fresh(), speech: fresh(), microphone: fresh(), analysis: fresh() };
+const stageLabels = { rabbit: '① 래빗 AI', speech: '② 음성', microphone: '② 마이크', analysis: '③ 문장 분석' };
+// Only enumerated lifecycle events enter the report; callback payloads and speech stay on screen.
+const eventLabels = {
+  'request-sent': '요청 전송', 'callback-received': '응답 수신', 'reply-unmatched': '요청 일치 실패', 'reply-invalid': '응답 형식 불일치',
+  'start-requested': '인식 시작 요청', started: '인식 서비스 시작', 'audio-start': '마이크 입력 이벤트', 'audio-end': '마이크 입력 종료',
+  'sound-start': '소리 감지', 'sound-end': '소리 종료', 'speech-start': '말소리 감지', 'speech-end': '말소리 종료',
+  'interim-result': '임시 문장 수신', 'final-result': '최종 문장 수신', 'stop-requested': '종료 요청', ended: '인식 종료',
+  'permission-requested': '마이크 권한 요청', 'stream-opened': '마이크 스트림 열림', 'recording-started': '녹음 시작', 'data-received': '오디오 데이터 수신',
+};
+const speechMilestones = ['start-requested', 'started', 'audio-start', 'sound-start', 'speech-start', 'interim-result', 'final-result'];
 const statuses = { 'not-run': '미실행', unsupported: '지원 API 없음', pending: '진행 중', success: '성공', error: '실패', 'timed-out': '시간 초과' };
 const errors = {
   unsupported: '이 화면에서 필요한 API를 찾지 못했습니다. R1 Creation에서 다시 확인해 주세요.',
   timeout: '응답 대기 시간이 지났습니다. 연결을 확인하고 다시 시도해 주세요.',
+  rabbit_no_response: '45초 동안 래빗 AI 응답이 도착하지 않았습니다.',
+  rabbit_unmatched_response: '래빗 응답은 도착했지만 45초 안에 이 요청과 일치하는 분석 결과를 확인하지 못했습니다.',
+  speech_start_timeout: '음성 인식 서비스가 시작됐다는 신호를 받지 못했습니다.',
+  speech_result_timeout: '입력을 마친 뒤 8초 동안 최종 인식 문장이 오지 않았습니다.',
+  speech_interim_only: '임시 문장만 도착했고 최종 인식 문장은 받지 못했습니다.',
   cancelled: '테스트를 취소했습니다.', permission: '마이크 또는 음성 인식 권한이 허용되지 않았습니다.',
   no_microphone: '사용 가능한 마이크를 찾지 못했습니다.', no_speech: '최종 인식 문장이 없습니다. 말한 뒤 버튼을 놓아 주세요.',
   network: '브라우저 음성 인식 서비스에 연결하지 못했습니다.',
@@ -25,6 +40,14 @@ const rabbit = new RabbitProbe({ onState: event => onProbeState('rabbit', event)
 const speech = new SpeechProbe({ onState: event => onProbeState('speech', event) });
 const microphone = new MicrophoneProbe({ onState: event => onProbeState('microphone', event) });
 
+function lastReached(key) {
+  const result = results[key];
+  const event = key === 'speech'
+    ? [...speechMilestones].reverse().find(name => result.eventCounts[name]) || result.timeline[result.timeline.length - 1]?.event
+    : result.timeline[result.timeline.length - 1]?.event;
+  return eventLabels[event] || '이벤트 없음';
+}
+
 function capabilities() {
   return { secureContext: window.isSecureContext === true, rabbitBridge: rabbit.supported,
     browserSpeech: speech.supported, microphoneRecording: microphone.supported,
@@ -40,6 +63,8 @@ function render() {
   const capturing = busy?.kind === 'capture';
   $('rabbit-text').disabled = !!busy;
   $('rabbit-analyze').disabled = !!busy || !transcript;
+  $('analysis-disabled-reason').hidden = !busy && !!transcript;
+  $('analysis-disabled-reason').textContent = !transcript ? '③은 아직 실행되지 않았습니다. ②에서 최종 인식 문장을 받아야 누를 수 있습니다.' : '진행 중인 테스트가 끝나면 ③을 누를 수 있습니다.';
   $('capture-hold').disabled = !!busy && !capturing;
   $('capture-mode').disabled = !!busy;
   $('speech-language').disabled = !!busy;
@@ -52,9 +77,14 @@ function render() {
   for (const [key, result] of Object.entries(results)) {
     const el = $(`${key}-status`);
     el.dataset.state = result.state;
-    const label = key === 'microphone' ? '마이크 · ' : key === 'speech' ? '음성 인식 · ' : '';
-    el.textContent = `${label}${statuses[result.state]}${result.detail ? ` · ${result.detail}` : ''}${result.code ? ` [${result.code}]` : ''}`;
+    el.textContent = `${stageLabels[key]} · ${statuses[result.state]}${result.detail ? ` · ${result.detail}` : ''}${result.code ? ` [${result.code}]` : ''}`;
   }
+  const reached = speechMilestones.filter(event => results.speech.eventCounts[event]);
+  $('speech-progress').textContent = reached.length ? `② 수신 신호: ${reached.map(event => eventLabels[event]).join(' → ')}` : '② 수신 신호: 아직 없음';
+  $('stage-results').textContent = Object.entries(results).map(([key, result]) => `${stageLabels[key]}: ${statuses[result.state]}${result.attempts ? ` · 마지막 확인: ${lastReached(key)}` : ''}${result.code ? ` [${result.code}]` : ''}`).join('\n');
+  const speechFailed = ['unsupported', 'error', 'timed-out'].includes(results.speech.state);
+  $('speech-guidance').hidden = !speechFailed;
+  $('speech-guidance').textContent = '화면의 “누르고 말하기” 버튼으로 한 문장만 다시 말해 보세요. 옆 버튼과 결과가 다르면 버튼 입력 경로를 구분할 수 있습니다. 계속 실패하면 모드를 “마이크 녹음만 확인”으로 바꿔 시험해 주세요.';
   $('transcript').value = transcript;
   if (results.speech.state === 'success' && results.analysis.state === 'success') {
     $('summary').textContent = '음성 → 텍스트 → 래빗 AI 응답을 확인했습니다. ③ 분석 결과의 가수·곡명이 맞는지 확인해 주세요.';
@@ -66,6 +96,8 @@ function render() {
     $('summary').textContent = '마이크 데이터 수집은 성공했습니다. 모드를 “음성 → 텍스트”로 바꾸고 ②를 확인해 주세요.';
   } else if (results.rabbit.state === 'success') {
     $('summary').textContent = '래빗 AI 연결은 성공했습니다. ②에서 음성을 텍스트로 받을 수 있는지 확인해 주세요.';
+  } else if (speechFailed) {
+    $('summary').textContent = '②에서 최종 인식 문장을 받지 못했습니다. ③ 문장 분석은 실행되지 않았습니다. 아래 단계명·오류 코드와 마지막 확인 신호를 알려 주세요.';
   } else {
     $('summary').textContent = '①과 ②의 결과를 각각 확인해 주세요. API가 있어도 실제 인식·응답이 성공해야 합니다.';
   }
@@ -74,13 +106,19 @@ function render() {
 function onProbeState(controller, event) {
   if (!busy || (busy.kind === 'model' ? controller !== 'rabbit' : busy.key !== controller)) return;
   const key = busy.key;
-  if (event.state === 'received') {
+  if (event.state === 'diagnostic' && Object.prototype.hasOwnProperty.call(eventLabels, event.event)) {
+    const result = results[key];
+    result.eventCounts[event.event] = (result.eventCounts[event.event] || 0) + 1;
+    result.timeline.push({ event: event.event, elapsedMs: Math.max(0, Date.now() - busy.started) });
+    if (result.timeline.length > 20) result.timeline.shift();
+    $('active-status').textContent = `${stageLabels[key]} · ${eventLabels[event.event]}`;
+  } else if (event.state === 'received') {
     results[key].uncorrelatedResponses = (results[key].uncorrelatedResponses || 0) + 1;
     results[key].detail = '응답 수신 · 요청과 맞는 분석 결과를 기다립니다.';
   } else if (['waiting', 'listening', 'recording', 'stopping'].includes(event.state)) {
     const labels = { waiting: busy.kind === 'model' ? '래빗 응답 대기 중' : '입력 시작·권한 확인 중', listening: '말씀해 주세요 · 놓으면 종료', recording: '마이크 녹음 중 · 놓으면 종료', stopping: '입력 종료 · 결과 기다리는 중' };
     results[key].detail = labels[event.state];
-    $('active-status').textContent = labels[event.state];
+    $('active-status').textContent = `${stageLabels[key]} · ${labels[event.state]}`;
   }
   if (typeof event.interim === 'string') {
     $('interim').hidden = !event.interim;
@@ -93,13 +131,14 @@ function beginRun(key, kind, source) {
   const run = { id: ++sequence, key, kind, source, started: Date.now() };
   busy = run;
   results[key] = { ...fresh(), state: 'pending', attempts: results[key].attempts + 1 };
-  $('active-status').textContent = kind === 'model' ? '래빗 응답 대기 중' : '입력 시작 중';
+  $('active-status').textContent = `${stageLabels[key]} · ${kind === 'model' ? '래빗 응답 대기 중' : '입력 시작 중'}`;
   render();
   return run;
 }
 function failure(key, cause) {
   const code = Object.prototype.hasOwnProperty.call(errors, cause?.code) ? cause.code : 'unknown';
-  Object.assign(results[key], { state: code === 'unsupported' ? 'unsupported' : code === 'timeout' ? 'timed-out' : 'error', code, detail: errors[code] || '완료하지 못했습니다. 다시 시도해 주세요.' });
+  const timedOut = ['timeout', 'rabbit_no_response', 'rabbit_unmatched_response', 'speech_start_timeout', 'speech_result_timeout'].includes(code);
+  Object.assign(results[key], { state: code === 'unsupported' ? 'unsupported' : timedOut ? 'timed-out' : 'error', code, detail: errors[code] || '완료하지 못했습니다. 다시 시도해 주세요.' });
 }
 function finishRun(run) {
   if (busy !== run) return;
@@ -247,6 +286,7 @@ function safeEnvironment() {
 function report() {
   const tests = Object.fromEntries(Object.entries(results).map(([key, result]) => [key, {
     state: result.state, code: result.code, attempts: result.attempts, durationMs: result.durationMs,
+    eventCounts: result.eventCounts, timeline: result.timeline,
     outputChars: result.outputChars, ...(key === 'speech' ? { requestedLanguage: speechSelection || 'browser-default' } : {}),
     ...(key === 'microphone' && result.bytes ? { bytes: result.bytes, mimeType: /^audio\/[a-z0-9.+-]+(?:;codecs=[a-z0-9.+-]+)?$/i.test(result.mimeType) ? result.mimeType : 'unknown' } : {}),
     ...(result.uncorrelatedResponses ? { uncorrelatedResponses: result.uncorrelatedResponses } : {}),

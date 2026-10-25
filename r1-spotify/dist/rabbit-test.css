@@ -33,6 +33,8 @@ textarea::placeholder { color: #83968a; }
 .status[data-state="error"], .status[data-state="timed-out"], .status[data-state="unsupported"] { color: #ffb49f; }
 .status[data-state="pending"] { color: #e2d190; }
 .result { padding: 10px; border: 1px solid #355640; border-radius: 8px; white-space: pre-line; }
+.guidance { padding: 9px; border-left: 3px solid #b69556; background: #2b271d; color: #eed7aa; font-size: 12px; }
+.stage-results { white-space: pre-line; padding: 9px; border: 1px solid #355640; border-radius: 8px; font-size: 12px; line-height: 1.8; }
 details { margin: 12px 0; }
 summary { cursor: pointer; min-height: 44px; padding: 12px 0; line-height: 1.4; }
 footer { padding: 24px 0 12px; }

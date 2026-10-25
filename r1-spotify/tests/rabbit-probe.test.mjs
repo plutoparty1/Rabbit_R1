@@ -28,7 +28,7 @@ function fixture() {
   class Recorder {
     static isTypeSupported(type) { return type === 'audio/webm'; }
     constructor(stream, config) { this.mimeType = config.mimeType; this.state = 'inactive'; recorders.push(this); }
-    start(timeslice) { this.state = 'recording'; this.timeslice = timeslice; }
+    start(timeslice) { this.state = 'recording'; this.timeslice = timeslice; this.onstart?.(); }
     stop() { this.state = 'inactive'; }
     chunk(size) { this.ondataavailable?.({ data: { size, arrayBuffer() { throw Error('audio must not be read'); } } }); }
   }
@@ -89,12 +89,46 @@ test('Rabbit preserves an existing callback and restores only its own handler', 
 
 test('uncorrelated, oversized and malformed replies never count as extraction success', async () => {
   const f = fixture(); f.bridge(); const rabbit = new RabbitProbe(f.options), request = rabbit.request(PROBE_TEST_TEXT);
-  const rejection = assert.rejects(request, { code: 'timeout' });
+  const rejection = assert.rejects(request, { code: 'rabbit_unmatched_response' });
   f.host.onPluginMessage({ data: JSON.stringify(f.response({ requestId: 'other' })) });
   f.host.onPluginMessage('x'.repeat(17000)); f.host.onPluginMessage({ data: 'invalid' });
   assert.equal(rabbit.active, true); assert.equal(f.events.filter(event => event.code === 'uncorrelated').length, 3);
   assert.equal(f.events.some(event => event.state === 'success'), false);
-  f.fire(20000); await rejection; assert.equal(f.timers.size, 0); rabbit.dispose();
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic').map(event => event.event), [
+    'request-sent', 'callback-received', 'reply-unmatched', 'callback-received', 'reply-invalid', 'callback-received', 'reply-invalid',
+  ]);
+  f.fire(45000); await rejection; assert.equal(f.timers.size, 0); rabbit.dispose();
+});
+
+test('Rabbit distinguishes no callback from callbacks without a matching response', async () => {
+  const f = fixture(); f.bridge(); const rabbit = new RabbitProbe(f.options), request = rabbit.request(PROBE_TEST_TEXT);
+  const rejected = assert.rejects(request, { code: 'rabbit_no_response' });
+  assert.deepEqual([...f.timers.values()].map(timer => timer.ms), [45000]);
+  f.fire(45000); await rejected;
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic'), [{ state: 'diagnostic', event: 'request-sent' }]);
+  assert.equal(rabbit.active, false); assert.equal(f.timers.size, 0); rabbit.dispose();
+});
+
+test('Rabbit considers both documented envelope fields and matches the active request', async () => {
+  const f = fixture(); f.bridge(); const rabbit = new RabbitProbe(f.options);
+  const first = rabbit.request(PROBE_TEST_TEXT);
+  f.host.onPluginMessage({ data: 'non-JSON metadata', message: JSON.stringify(f.response()) });
+  assert.equal((await first).title, '밤편지');
+  const second = rabbit.request(PROBE_TEST_TEXT);
+  f.host.onPluginMessage({ data: JSON.stringify(f.response({}, 0)), message: JSON.stringify(f.response({}, 1)) });
+  assert.deepEqual(await second, f.response({}, 1));
+  assert.equal(f.events.some(event => event.event === 'reply-unmatched'), false);
+  assert.equal(f.timers.size, 0); rabbit.dispose();
+});
+
+test('Rabbit envelope traversal bounds cycles and depth without hiding a valid sibling', async () => {
+  const f = fixture(); f.bridge(); const rabbit = new RabbitProbe(f.options), first = rabbit.request(PROBE_TEST_TEXT);
+  const cyclic = {}; cyclic.data = cyclic; cyclic.message = JSON.stringify(f.response());
+  f.host.onPluginMessage(cyclic); await first;
+  const second = rabbit.request(PROBE_TEST_TEXT), rejected = assert.rejects(second, { code: 'rabbit_unmatched_response' });
+  let deep = f.response(); for (let i = 0; i < 10; i++) deep = { data: deep };
+  f.host.onPluginMessage(deep); assert.equal(rabbit.active, true);
+  f.fire(45000); await rejected; rabbit.dispose();
 });
 
 test('Rabbit cancels immediately and rejects stale replies after a new request', async () => {
@@ -111,6 +145,7 @@ test('Rabbit rejects missing fields, invalid input and synchronous native failur
   await assert.rejects(rabbit.request(''), { code: 'invalid_text' });
   const request = rabbit.request(PROBE_TEST_TEXT); f.host.onPluginMessage(f.response({ title: '' }));
   await assert.rejects(request, { code: 'invalid_response' });
+  assert.ok(f.events.some(event => event.event === 'reply-invalid'));
   f.host.PluginMessageHandler.postMessage = () => { throw Error('secret raw native message'); };
   await assert.rejects(rabbit.request(PROBE_TEST_TEXT), { code: 'bridge_failed' });
   assert.equal(JSON.stringify(f.events).includes('secret'), false); assert.equal(f.timers.size, 0); rabbit.dispose();
@@ -119,9 +154,10 @@ test('Rabbit rejects missing fields, invalid input and synchronous native failur
 test('speech default leaves language unset, interim alone cannot be successful', async () => {
   const f = fixture(); f.host.SpeechRecognition = f.Recognition; const speech = new SpeechProbe(f.options), request = speech.begin();
   assert.equal(f.recognizers[0].lang, 'default');
+  assert.equal(f.recognizers[0].continuous, false);
   f.recognizers[0].result('unfinished words', false); assert.equal(f.events.at(-1).interim, 'unfinished words');
   speech.release(); f.recognizers[0].onend();
-  await assert.rejects(request, { code: 'no_speech' }); assert.equal(f.recognizers[0].aborted, true); assert.equal(f.timers.size, 0);
+  await assert.rejects(request, { code: 'speech_interim_only' }); assert.equal(f.recognizers[0].aborted, true); assert.equal(f.timers.size, 0);
 });
 
 test('speech waits for final result after release, then completes on end', async () => {
@@ -145,14 +181,47 @@ test('speech released before permission/onstart cancels and ignores a delayed st
   assert.equal(speech.active, false); assert.equal(f.timers.size, 0);
 });
 
+test('speech startup timeout is distinct and ignores late starts or audio events', async () => {
+  const f = fixture(); f.Recognition.prototype.start = function () {};
+  f.host.SpeechRecognition = f.Recognition;
+  const speech = new SpeechProbe(f.options), request = speech.begin(), rejected = assert.rejects(request, { code: 'speech_start_timeout' });
+  const recognition = f.recognizers[0], lateStart = recognition.onstart, lateAudio = recognition.onaudiostart;
+  f.fire(15000); await rejected; lateStart(); lateAudio();
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic'), [{ state: 'diagnostic', event: 'start-requested' }]);
+  assert.equal(recognition.aborted, true); assert.equal(speech.active, false); assert.equal(f.timers.size, 0);
+});
+
 test('speech handles spontaneous end, final timeout fallback and missing speech timeout', async () => {
   const f = fixture(); f.host.SpeechRecognition = f.Recognition; const speech = new SpeechProbe(f.options);
   const first = speech.begin(); f.recognizers[0].result('Play Yesterday'); f.recognizers[0].onend();
   assert.equal((await first).transcript, 'Play Yesterday');
   const second = speech.begin(); f.recognizers[1].result('Play Yesterday'); f.fire(15000); f.fire(8000);
   assert.equal((await second).transcript, 'Play Yesterday');
-  const third = speech.begin(), rejected = assert.rejects(third, { code: 'timeout' });
+  const third = speech.begin(), rejected = assert.rejects(third, { code: 'speech_result_timeout' });
   f.fire(15000); f.fire(8000); await rejected; assert.equal(f.timers.size, 0);
+});
+
+test('speech interim-only result timeout stays unsuccessful and reports no raw text in diagnostics', async () => {
+  const f = fixture(); f.host.SpeechRecognition = f.Recognition; const speech = new SpeechProbe(f.options), request = speech.begin();
+  const rejected = assert.rejects(request, { code: 'speech_interim_only' });
+  f.recognizers[0].result('private interim speech', false); speech.release(); f.fire(8000); await rejected;
+  const diagnostics = f.events.filter(event => event.state === 'diagnostic');
+  assert.deepEqual(diagnostics.map(event => event.event), ['start-requested', 'started', 'interim-result', 'stop-requested']);
+  assert.ok(diagnostics.every(event => Object.keys(event).sort().join(',') === 'event,state'));
+  assert.equal(JSON.stringify(diagnostics).includes('private'), false); assert.equal(f.timers.size, 0);
+});
+
+test('speech lifecycle distinguishes recognizer, audio, sound and speech and clears every handler', async () => {
+  const f = fixture(); f.host.SpeechRecognition = f.Recognition; const speech = new SpeechProbe(f.options), request = speech.begin({ lang: 'ko-KR' });
+  const recognition = f.recognizers[0];
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic').map(event => event.event), ['start-requested', 'started']);
+  for (const name of ['onaudiostart', 'onsoundstart', 'onspeechstart', 'onspeechend', 'onsoundend', 'onaudioend']) recognition[name]();
+  recognition.result(PROBE_TEST_TEXT); recognition.onend(); await request;
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic').map(event => event.event), [
+    'start-requested', 'started', 'audio-start', 'sound-start', 'speech-start', 'speech-end', 'sound-end', 'audio-end', 'final-result', 'ended',
+  ]);
+  for (const name of ['onstart', 'onresult', 'onerror', 'onend', 'onaudiostart', 'onaudioend', 'onsoundstart', 'onsoundend', 'onspeechstart', 'onspeechend']) assert.equal(recognition[name], null);
+  assert.equal(recognition.stopped, undefined); assert.equal(recognition.aborted, true); assert.equal(f.timers.size, 0);
 });
 
 test('speech cancellation suppresses late result and handles safe native errors', async () => {
@@ -172,6 +241,10 @@ test('microphone records metadata only; stops tracks and does not read or retain
   assert.deepEqual(await request, { bytes: 150, mimeType: 'audio/webm' });
   assert.equal(f.trackStops(), 1); assert.equal(f.timers.size, 0); assert.equal(microphone.active, false);
   assert.equal(JSON.stringify(f.events).includes('arrayBuffer'), false);
+  assert.deepEqual(f.events.filter(event => event.state === 'diagnostic').map(event => event.event), [
+    'permission-requested', 'stream-opened', 'recording-started', 'data-received', 'stop-requested', 'data-received',
+  ]);
+  assert.equal(recorder.onstart, null); assert.equal(recorder.ondataavailable, null);
 });
 
 test('release during pending microphone permission settles and late stream is stopped', async () => {
