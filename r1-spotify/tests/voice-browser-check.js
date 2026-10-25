@@ -6,12 +6,13 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     const context = await browser.newContext({ locale, viewport: { width: 240, height: 282 } });
     context.setDefaultTimeout(15000);
     const errors = [], playback = [], uploads = [], searches = [];
-    let bridgeImports = 0, exact = true, finishPlayer;
+    let bridgeImports = 0, exact = true, finishPlayer, finishVerification, blockVerification = false, applyPlayback = true;
     const playerGate = new Promise(resolve => { finishPlayer = resolve; });
+    const verificationGate = new Promise(resolve => { finishVerification = resolve; });
     const uri = 'spotify:track:' + 'a'.repeat(22);
     const track = { uri, id: 'a'.repeat(22), name: '밤편지', type: 'track', duration_ms: 180000,
       artists: [{ name: '아이유' }], album: { name: 'Palette', images: [] } };
-    const state = { is_playing: true, progress_ms: 0, actions: {}, device: { id: 'speaker', is_restricted: false }, item: track };
+    const state = { is_playing: true, progress_ms: 0, actions: {}, device: { id: 'speaker', name: 'Living room', is_restricted: false }, item: track };
     try {
       await context.addInitScript(() => {
         sessionStorage.setItem('r1_spotify_device_mode', 'personal');
@@ -84,8 +85,14 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await context.route('https://api.spotify.com/**', async route => {
         const request = route.request(), url = new URL(request.url());
         if (url.pathname === '/v1/search') { searches.push(url.searchParams.get('q')); return route.fulfill({ json: { tracks: { items: exact ? [track] : [track, { ...track, uri: 'spotify:track:' + 'b'.repeat(22) }] } } }); }
-        if (request.method() !== 'GET') { playback.push({ url: url.pathname, body: request.postDataJSON() }); return route.fulfill({ status: 204, body: '' }); }
-        await playerGate; return route.fulfill({ json: state });
+        if (request.method() !== 'GET') {
+          const body = request.postDataJSON(); playback.push({ url: url.pathname, deviceId: url.searchParams.get('device_id'), body });
+          if (applyPlayback && body?.uris?.[0]) { state.item = { ...track, uri: body.uris[0], id: body.uris[0].split(':').at(-1) }; state.is_playing = true; }
+          return route.fulfill({ status: 204, body: '' });
+        }
+        await playerGate;
+        if (blockVerification && playback.length) await verificationGate;
+        return route.fulfill({ json: state });
       });
       const tab = await context.newPage(); tab.on('pageerror', error => errors.push(error.message));
       await tab.goto(baseURL);
@@ -105,7 +112,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.evaluate(() => { window.delayRecorderStart = false; window.finishRecorderStart(); });
       await tab.waitForFunction(() => window.recorderInstances.some(recorder => recorder.state === 'paused'));
       await tab.locator('#voice-open[data-ready="true"]').waitFor();
-      check(await tab.locator('#voice-open').innerText() === (locale === 'ko-KR' ? '녹음 가능' : 'Ready to record'), 'Capture-ready label implies completed recognition setup');
+      check(await tab.locator('#voice-open').innerText() === (locale === 'ko-KR' ? '말로 노래 찾기' : 'Find by voice'), 'Feature button lost its purpose during preparation');
       check(await tab.evaluate(() => !window.mockRecognizer.ready && window.modelLoads === 1), 'Cold recognizer was not still loading');
       check(await tab.evaluate(() => window.recordingCount === 0 && window.micTracks[0].enabled && window.vibrations.length === 0), 'Released cold input started later or standby source is not live');
       finishPlayer(); await tab.locator('#title').filter({ hasText: '밤편지' }).waitFor();
@@ -114,7 +121,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       const release = () => tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
       await begin();
       check(await tab.evaluate(() => window.micCalls === 1 && window.micTracks[0].enabled && window.recordingCount === 1 && window.vibrations.length === 1), 'First hold did not reuse prepared recorder');
-      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '지금 말하세요' : 'Speak now'), 'Recording cue missing');
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '듣는 중' : 'Listening'), 'Recording cue missing');
       await tab.waitForFunction(() => document.getElementById('voice-elapsed').textContent !== '0:00');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-recording-' + locale + '.png' });
       await tab.setViewportSize({ width: 240, height: 240 });
@@ -126,7 +133,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.evaluate(() => { window.delayTranscription = true; }); await release();
       await tab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
       check(await tab.locator('#voice-recording').isHidden(), 'Recording clock remains after release');
-      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '녹음 완료 · 인식기 준비 중' : 'Recorded · Recognizer starting'), 'Post-release model wait is mislabeled as transcription');
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '노래 검색 준비 중' : 'Preparing song search'), 'Post-release model wait is mislabeled as transcription');
       check(/50%/.test(await tab.locator('#voice-model-status').innerText()), 'Actual file download progress is missing');
       check(playback.length === 0 && searches.length === 0, 'Spotify request started before model readiness');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-recorded-loading-' + locale + '.png' });
@@ -141,9 +148,15 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-processing-' + locale + '.png' });
       await tab.waitForFunction(() => Boolean(window.finishTranscription));
       check((await tab.locator('#voice-wait-status').innerText()).startsWith(locale === 'ko-KR' ? '음성을 글자로 변환' : 'Transcribing audio'), 'Transcription elapsed stage is missing');
+      blockVerification = true;
       await tab.evaluate(() => { window.finishTranscription(); window.delayTranscription = false; });
+      await tab.locator('#voice-panel[data-phase="verifying"]').waitFor();
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '노래 재생 확인 중' : 'Checking playback'), 'PUT 204 is shown as completed playback before verification');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-verifying-' + locale + '.png' });
+      blockVerification = false; finishVerification();
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
       check(playback.length === 1 && playback[0].body.uris[0] === uri, 'First request failed');
+      check((await tab.locator('#voice-instruction').innerText()).includes('Living room'), 'Confirmed device name is missing');
       await tab.locator('#voice-cancel').click(); await ready(); await tab.locator('#voice-open').click();
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-ready-' + locale + '.png' });
       if (locale === 'en-US') check(!/[가-힣]/.test(await tab.locator('#voice-panel').innerText()), 'Untranslated English UI');
@@ -151,7 +164,9 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.locator('#voice-panel[data-phase="choosing"]').waitFor();
       check(playback.length === 1 && await tab.locator('#voice-results button').count() === 2, 'Ambiguous search did not offer candidates');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-candidates-' + locale + '.png' });
+      state.device = { id: 'speaker-2', name: 'Bedroom speaker', is_restricted: false };
       await tab.locator('#voice-results button').nth(1).click(); await tab.locator('#voice-panel[data-phase="done"]').waitFor();
+      check(playback[1].deviceId === 'speaker-2' && (await tab.locator('#voice-instruction').innerText()).includes('Bedroom speaker'), 'Candidate click used a stale playback device');
       exact = true; await ready();
       const hold = await tab.locator('#voice-record').boundingBox();
       await tab.mouse.move(hold.x + hold.width / 2, hold.y + hold.height / 2); await tab.mouse.down();
@@ -174,12 +189,28 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await tab.evaluate(() => window.mockRecognizer.ready && window.mockRecognizer.draining && window.modelLoads === 1), 'Cancel unloaded an initialized model');
       await begin(); await release();
       await tab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
-      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '녹음 완료 · 이전 인식 정리 중' : 'Recorded · Finishing previous job'), 'Recorded request waiting for old inference is mislabeled as model reload');
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '이전 요청 마무리 중' : 'Finishing the previous request'), 'Recorded request waiting for old inference is mislabeled as model reload');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-draining-' + locale + '.png' });
       await tab.keyboard.press('Escape');
       await tab.evaluate(() => { window.finishTranscription(); window.delayTranscription = false; });
       await tab.waitForFunction(() => !window.mockRecognizer.draining);
       check(playback.length === 3 && await tab.evaluate(() => window.modelCancels > 0 && window.modelLoads === 1 && window.cancelOptions.every(options => options?.preserveModel)), 'Cancelled recognition played or discarded its model');
+      // A 204 response with the old song still playing must retain a retry candidate.
+      applyPlayback = false; state.item = { ...track, uri: 'spotify:track:' + 'c'.repeat(22), id: 'c'.repeat(22) };
+      await tab.evaluate(() => { window.testTranscript = ''; }); await begin(); await release();
+      await tab.locator('#voice-panel[data-phase="choosing"][data-playback-error="true"]').waitFor();
+      check(playback.length === 4 && await tab.locator('#voice-results button').count() === 1, 'Wrong-track 204 discarded its retry candidate or repeated PUT automatically');
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '재생을 확인하지 못했어요' : 'Playback not confirmed'), 'Wrong-track 204 is labeled as success');
+      if (locale === 'en-US') check(!/[가-힣]/.test(await tab.locator('#voice-instruction').innerText()), 'Playback failure is untranslated');
+      await tab.setViewportSize({ width: 240, height: 240 });
+      const retryBox = await tab.locator('#voice-results button').boundingBox(), retryContent = await tab.locator('#voice-content').boundingBox();
+      check(await tab.locator('#voice-record').isHidden() && retryBox.y >= retryContent.y && retryBox.y + retryBox.height <= retryContent.y + retryContent.height, 'Retry candidate is clipped by redundant controls');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-playback-retry-' + locale + '.png' });
+      await tab.setViewportSize({ width: 240, height: 282 });
+      applyPlayback = true; await tab.locator('#voice-results button').click();
+      await tab.locator('#voice-panel[data-phase="done"]').waitFor();
+      check(playback.length === 5 && playback[4].body.uris[0] === uri, 'Retained candidate did not retry playback');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-confirmed-' + locale + '.png' });
       await begin(); await tab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       check(await tab.evaluate(() => window.micTracks.every(track => track.readyState === 'ended') && window.recordingCount === 0 && window.wakeRequests === window.wakeReleases), 'Page exit leaked resources');
       await tab.evaluate(() => window.dispatchEvent(new Event('pageshow'))); await ready();
@@ -191,7 +222,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await tab.evaluate(() => window.micTracks.every(track => track.readyState === 'ended') && window.recordingCount === 0), 'Late permission leaked');
       await tab.evaluate(() => { window.denyMicrophone = true; Object.defineProperty(document, 'hidden', { configurable: true, value: false }); document.dispatchEvent(new Event('visibilitychange')); });
       await tab.waitForFunction(() => window.micCalls === 4);
-      await tab.locator('#voice-open').filter({ hasText: locale === 'ko-KR' ? '음성 다시 준비' : 'Retry voice setup' }).waitFor();
+      await tab.locator('#voice-open[data-ready="false"]').waitFor();
       await tab.evaluate(() => { window.dispatchEvent(new Event('focus')); window.dispatchEvent(new Event('pageshow')); });
       await tab.waitForTimeout(150); check(await tab.evaluate(() => window.micCalls === 4), 'Permission denial retried automatically');
       await tab.evaluate(() => { window.denyMicrophone = false; }); await tab.locator('#voice-open').click(); await ready();
@@ -212,7 +243,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await retryTab.evaluate(() => { window.delayMicrophone = false; window.delayRecorderStart = false; window.pendingMicrophones.shift()(); });
       await retryTab.locator('#voice-open[data-ready="true"]').waitFor(); await retryTab.locator('#voice-open').click();
       await retryTab.evaluate(() => window.failModel());
-      await retryTab.locator('#voice-state').filter({ hasText: locale === 'ko-KR' ? '음성 준비 실패' : 'Voice setup failed' }).waitFor();
+      await retryTab.locator('#voice-state').filter({ hasText: locale === 'ko-KR' ? '노래 검색 준비 실패' : 'Voice search setup failed' }).waitFor();
       check(await retryTab.locator('#voice-record').isEnabled() && await retryTab.locator('#voice-record').innerText() === (locale === 'ko-KR' ? '누르고 다시 시도' : 'Hold to retry'), 'Failed setup has no clear recording retry');
       await retryTab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await retryTab.locator('#voice-panel[data-phase="recording"]').waitFor();
@@ -221,17 +252,18 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await retryTab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
       await retryTab.keyboard.press('Escape'); await retryTab.evaluate(() => window.finishModel());
       await retryTab.locator('#voice-open[data-ready="true"]').waitFor();
-      check(playback.length === 3, 'Cancelled preparation retry played'); await retryTab.close();
+      check(playback.length === 5, 'Cancelled preparation retry played'); await retryTab.close();
       const unsupportedTab = await context.newPage(); unsupportedTab.on('pageerror', error => errors.push(error.message));
       await unsupportedTab.goto(baseURL + '?test-unsupported=1');
-      await unsupportedTab.locator('#voice-open').filter({ hasText: locale === 'ko-KR' ? '음성 다시 준비' : 'Retry voice setup' }).waitFor();
+      await unsupportedTab.waitForFunction(() => window.mockRecognizer?.supported === false);
       await unsupportedTab.locator('#voice-open').click();
-      check(await unsupportedTab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '음성 준비 실패' : 'Voice setup failed'), 'Unsupported browser remains in indefinite preparation');
+      await unsupportedTab.locator('#voice-state').filter({ hasText: locale === 'ko-KR' ? '노래 검색 준비 실패' : 'Voice search setup failed' }).waitFor();
+      check(await unsupportedTab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '노래 검색 준비 실패' : 'Voice search setup failed'), 'Unsupported browser remains in indefinite preparation');
       check(await unsupportedTab.evaluate(() => window.micCalls === 0 && window.modelLoads === 0), 'Unsupported recognizer still acquired microphone');
       await unsupportedTab.close();
-      check(uploads.length === 0 && playback.length === 3 && bridgeImports === 0 && errors.length === 0, 'Unexpected upload/playback/import/errors: ' + errors.join('; '));
-      reports.push({ locale, playback: playback.length, uploads: uploads.length, startupBeforeSpotify: true, coldPressDoesNotQueue: true, captureBeforeModelReady: true, closePreservesModelLoad: true, lateInferenceCannotPlay: true, repeatedHoldsRequests: 1, automaticResume: true, singleTapPermissionRetry: true, noHeldPreparation: true, errors });
-    } finally { finishPlayer(); await context.close(); }
+      check(uploads.length === 0 && playback.length === 5 && bridgeImports === 0 && errors.length === 0, 'Unexpected upload/playback/import/errors: ' + errors.join('; '));
+      reports.push({ locale, playback: playback.length, uploads: uploads.length, verifiedPlayback: true, wrongTrackRetry: true, freshDeviceSelection: true, startupBeforeSpotify: true, coldPressDoesNotQueue: true, captureBeforeModelReady: true, closePreservesModelLoad: true, lateInferenceCannotPlay: true, repeatedHoldsRequests: 1, automaticResume: true, singleTapPermissionRetry: true, noHeldPreparation: true, errors });
+    } finally { finishPlayer(); finishVerification(); await context.close(); }
   }
   return reports;
 }

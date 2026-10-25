@@ -136,6 +136,54 @@ test('play sends track URI JSON and safely encoded device; 401 refresh retains p
   assert.equal(playback[1].options.headers.Authorization, 'Bearer new-access');
 });
 
+test('player state is fetched without HTTP caching and remains compatible with callers without options', async () => {
+  const calls = [];
+  const current = { is_playing: true, device: { id: 'current-device', name: 'Speaker' }, item: track };
+  const client = makeClient(async (url, options) => { calls.push({ url: new URL(url), options }); return json(current); });
+  assert.deepEqual(await client.player(), current);
+  const controller = new AbortController();
+  assert.deepEqual(await client.player({ signal: controller.signal }), current);
+  assert.equal(calls.length, 2);
+  for (const call of calls) {
+    assert.equal(call.url.pathname, '/v1/me/player');
+    assert.equal(call.options.method, 'GET');
+    assert.equal(call.options.cache, 'no-store');
+    assert.equal(call.options.body, undefined);
+  }
+});
+
+test('cancelled player-state lookups cannot return a late playback confirmation', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return json({ is_playing: true, item: track }); });
+  const before = new AbortController(); before.abort();
+  await assert.rejects(client.player({ signal: before.signal }), { name: 'AbortError' });
+  assert.equal(calls, 0);
+  const during = new AbortController();
+  client.fetcher = async (url, options) => {
+    calls++; during.abort();
+    assert.equal(options.signal.aborted, true);
+    return json({ is_playing: true, item: track });
+  };
+  await assert.rejects(client.player({ signal: during.signal }), { name: 'AbortError' });
+  assert.equal(calls, 1);
+});
+
+test('player-state authentication refresh retains no-store and cancellation options', async () => {
+  const calls = [], controller = new AbortController();
+  const client = makeClient(async (url, options) => {
+    calls.push({ url, options });
+    if (url.includes('/api/token')) return json({ access_token: 'fresh', expires_in: 3600 });
+    if (calls.length === 1) return new Response(null, { status: 401 });
+    controller.abort();
+    assert.equal(options.signal.aborted, true);
+    return json({ is_playing: true, item: track });
+  });
+  await assert.rejects(client.player({ signal: controller.signal }), { name: 'AbortError' });
+  const lookups = calls.filter(call => !call.url.includes('/api/token'));
+  assert.equal(lookups.length, 2);
+  assert.ok(lookups.every(call => call.options.cache === 'no-store'));
+});
+
 test('invalid input cannot send requests and cancellation does not start a fallback', async () => {
   let calls = 0;
   const client = makeClient(async () => { calls++; return json({ tracks: { items: [] } }); });

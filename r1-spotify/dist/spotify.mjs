@@ -231,7 +231,7 @@ export class SpotifyClient {
     if (generation !== this.generation || !this.connected) throw new Error('연결이 해제되었습니다.');
     return this.tokens.access_token;
   }
-  async request(path, { method = 'GET', retry = true, data, signal } = {}) {
+  async request(path, { method = 'GET', retry = true, data, signal, cache } = {}) {
     const generation = this.generation;
     if (!this.connected) throw new Error('Spotify 로그인이 필요합니다.');
     if (Date.now() < this.blockedUntil) {
@@ -243,10 +243,11 @@ export class SpotifyClient {
     if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
     const { response, body } = await requestJson('https://api.spotify.com/v1' + path, {
       method, signal, headers: { Authorization: 'Bearer ' + accessToken, ...(data ? { 'Content-Type': 'application/json' } : {}) },
+      ...(cache ? { cache } : {}),
       ...(data ? { body: JSON.stringify(data) } : {}),
     }, this.fetcher);
     if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
-    if (response.status === 401 && retry) { await this.refresh(); return this.request(path, { method, retry: false, data, signal }); }
+    if (response.status === 401 && retry) { await this.refresh(); return this.request(path, { method, retry: false, data, signal, cache }); }
     if (response.status === 429) {
       const seconds = Math.max(1, Number(response.headers.get('Retry-After')) || 30);
       this.blockedUntil = Date.now() + seconds * 1000;
@@ -298,7 +299,7 @@ export class SpotifyClient {
     const query = deviceId ? '?' + new URLSearchParams({ device_id: deviceId }) : '';
     return this.request('/me/player/play' + query, { method: 'PUT', data: { uris: [uri] }, signal });
   }
-  async player() { return this.api(''); }
+  async player({ signal } = {}) { return this.request('/me/player', { signal, cache: 'no-store' }); }
   // Spotify의 실제 재생 기기에 0~100 정수 볼륨을 적용하며 기존 인증·요청 제한 처리를 재사용합니다.
   async volume(percent, deviceId) {
     if (!Number.isInteger(percent) || percent < 0 || percent > 100) throw new Error('볼륨은 0부터 100까지의 정수여야 합니다.');

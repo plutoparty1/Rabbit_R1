@@ -6,6 +6,10 @@ import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=
 export const MAX_RECORDING_MS = 60000;
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
 export const RECORDER_START_TIMEOUT_MS = 8000;
+export const PLAYBACK_CONFIRM_TIMEOUT_MS = 8000;
+export const PLAYBACK_CONFIRM_INTERVAL_MS = 1000;
+const playbackUnconfirmed = '선택한 곡의 재생을 확인하지 못했습니다. Spotify 기기와 연결 상태를 확인한 뒤 아래 곡을 다시 눌러 주세요.';
+const playbackStateFailed = 'Spotify 재생 상태를 확인하지 못했습니다. 연결 상태를 확인한 뒤 아래 곡을 다시 눌러 주세요.';
 const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 const serverMessages = {
   unavailable: '음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.',
@@ -235,7 +239,7 @@ export class VoiceController {
     const previous = this.session;
     this.session = null;
     if (previous) this.cleanup(previous);
-    this.update({ phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [] });
+    this.update({ phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
   }
   fail(session, message) {
     if (this.session !== session) return;
@@ -256,9 +260,9 @@ export class VoiceController {
   async begin() {
     if (this.active || !this.canStart()) return;
     if (this.requirePreparedMicrophone || this.preparationEnabled) return this.beginPrepared();
-    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, started: false, device: this.deviceId(), microphoneEpoch: this.microphoneEpoch };
+    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, started: false, microphoneEpoch: this.microphoneEpoch };
     this.session = session;
-    this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [] });
+    this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
     try {
       if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('이 브라우저에서 녹음을 지원하지 않습니다. HTTPS와 마이크 권한을 확인해 주세요.');
       if (this.transcriber) {
@@ -346,7 +350,7 @@ export class VoiceController {
     for (const [track, listener] of prepared.endedListeners) track.removeEventListener?.('ended', listener);
     prepared.endedListeners = [];
     const session = { abort: new AbortController(), chunks: prepared.chunks, bytes: prepared.bytes, timer: null, held: true, started: false,
-      device: this.deviceId(), stream: prepared.stream, recorder: prepared.recorder };
+      stream: prepared.stream, recorder: prepared.recorder };
     this.session = session;
     const stream = session.stream, recorder = session.recorder;
     recorder.onstart = recorder.onpause = null;
@@ -377,7 +381,7 @@ export class VoiceController {
       this.parkMicrophone(session); this.rearmMicrophone();
       void this.process(session);
     };
-    this.update({ phase: 'preparing', message: '녹음을 시작합니다.', transcript: '', language: '', tracks: [] });
+    this.update({ phase: 'preparing', message: '녹음을 시작합니다.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
     session.timer = this.setTimer(failCapture, RECORDER_START_TIMEOUT_MS);
     try {
       // Recorder startup and permission have already completed during app preparation.
@@ -469,18 +473,81 @@ export class VoiceController {
     const track = session.tracks.find(item => item.uri === uri);
     if (track) await this.play(session, track);
   }
+  waitForPlaybackPoll(signal) {
+    return new Promise((resolve, reject) => {
+      let timer;
+      const finish = error => {
+        this.clearTimer(timer);
+        signal.removeEventListener('abort', aborted);
+        if (error) reject(error); else resolve();
+      };
+      const aborted = () => finish(new DOMException('Cancelled', 'AbortError'));
+      signal.addEventListener('abort', aborted, { once: true });
+      if (signal.aborted) { aborted(); return; }
+      timer = this.setTimer(() => finish(), PLAYBACK_CONFIRM_INTERVAL_MS);
+    });
+  }
+  async confirmPlayback(session, uri, deviceId) {
+    const controller = new AbortController(), signal = controller.signal;
+    const cancelled = () => controller.abort();
+    session.abort.signal.addEventListener('abort', cancelled, { once: true });
+    let timedOut = false, rejectAbort;
+    const aborted = new Promise((_, reject) => { rejectAbort = () => reject(timedOut ? new Error(playbackUnconfirmed) : new DOMException('Cancelled', 'AbortError')); });
+    signal.addEventListener('abort', rejectAbort, { once: true });
+    const deadline = this.setTimer(() => { timedOut = true; controller.abort(); }, PLAYBACK_CONFIRM_TIMEOUT_MS);
+    if (session.abort.signal.aborted) controller.abort();
+    const poll = async () => {
+      // A 204 only accepts the command. Confirm the selected track on the same
+      // fresh target, including Spotify's market-specific track relinking.
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (signal.aborted || !this.current(session)) throw new DOMException('Cancelled', 'AbortError');
+        const player = await this.client.player({ signal });
+        if (signal.aborted || !this.current(session)) throw new DOMException('Cancelled', 'AbortError');
+        if (player?.is_playing === true && player.device?.id === deviceId &&
+            (player.item?.uri === uri || player.item?.linked_from?.uri === uri)) return player;
+        if (attempt < 5) await this.waitForPlaybackPoll(signal);
+      }
+      throw new Error(playbackUnconfirmed);
+    };
+    try { return await Promise.race([poll(), aborted]); }
+    finally {
+      this.clearTimer(deadline);
+      session.abort.signal.removeEventListener('abort', cancelled);
+      signal.removeEventListener('abort', rejectAbort);
+      controller.abort();
+    }
+  }
   async play(session, track) {
     if (!this.current(session)) return;
-    if (!this.canStart()) { this.fail(session, 'Spotify를 연결해 주세요.'); return; }
-    this.update({ phase: 'playing', message: '선택한 곡을 재생하고 있습니다.', tracks: [] });
+    // Keep the choices until playback is observed, so a failed request can be
+    // retried by a deliberate tap without repeating speech recognition.
+    if (!session.tracks?.length) session.tracks = [track];
+    this.update({ phase: 'playing', message: 'Spotify에 재생을 요청하고 있습니다.', tracks: [], playbackError: false, deviceName: '' });
     try {
-      // Cancellation between search and playback never sends a playback command.
+      if (!this.canStart()) throw new Error('Spotify를 연결해 주세요.');
+      // Recognition can take long enough for Spotify Connect's active device to
+      // change. Never send a command to the device cached when recording began.
+      const player = await this.client.player({ signal: session.abort.signal });
       if (!this.current(session)) return;
-      await this.client.playTrack(track.uri, session.device, { signal: session.abort.signal });
+      const device = player?.device;
+      if (!device || typeof device.id !== 'string' || !device.id.trim() || device.is_active === false) {
+        throw new Error('재생할 Spotify 기기가 없습니다. 휴대폰이나 PC에서 Spotify를 열고 곡을 한 번 재생한 뒤, 아래 곡을 다시 눌러 주세요.');
+      }
+      if (device.is_restricted === true) throw new Error('이 Spotify 기기는 원격 재생을 허용하지 않습니다. Spotify에서 다른 기기를 선택한 뒤 아래 곡을 다시 눌러 주세요.');
+      const deviceName = typeof device.name === 'string' ? device.name : '';
+      this.update({ deviceName });
+      if (!this.current(session)) return;
+      await this.client.playTrack(track.uri, device.id, { signal: session.abort.signal });
+      if (!this.current(session)) return;
+      this.update({ phase: 'verifying', message: '선택한 곡이 재생되는지 확인하고 있습니다.', deviceName });
+      await this.confirmPlayback(session, track.uri, device.id);
       if (!this.current(session)) return;
       this.session = null;
       this.cleanup(session);
-      this.update({ phase: 'done', message: '재생을 요청했습니다.', track });
-    } catch (error) { if (this.current(session)) this.fail(session, error.message); }
+      this.update({ phase: 'done', message: '선택한 곡이 재생 중입니다.', track, deviceName, playbackError: false });
+    } catch (error) {
+      if (this.current(session)) this.update({ phase: 'choosing', message: error?.name === 'AbortError' ? playbackStateFailed : error?.message || playbackUnconfirmed,
+        tracks: session.tracks, playbackError: true });
+    }
   }
 }

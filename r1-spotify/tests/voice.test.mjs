@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS, RECORDER_START_TIMEOUT_MS, createKeylessTranscriber } from '../dist/voice.mjs';
+import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS, RECORDER_START_TIMEOUT_MS, PLAYBACK_CONFIRM_TIMEOUT_MS, PLAYBACK_CONFIRM_INTERVAL_MS, createKeylessTranscriber } from '../dist/voice.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const song = (id = 'a', name = '밤편지', artist = '아이유') => ({ id: id.repeat(22), uri: 'spotify:track:' + id.repeat(22), name, artists: [{ name: artist }] });
 function fixture(options = {}) {
   const calls = [], timers = new Map(), changes = [], recorders = [];
-  let stopped = 0, captures = 0, timerId = 0;
+  let stopped = 0, captures = 0, timerId = 0, playingUri = null;
   const makeStream = () => {
     const track = Object.assign(new EventTarget(), { kind: 'audio', enabled: true, readyState: 'live', stop() { stopped++; this.readyState = 'ended'; } });
     return { get active() { return track.readyState === 'live'; }, getTracks: () => [track], getAudioTracks: () => [track] };
@@ -27,7 +27,8 @@ function fixture(options = {}) {
   const client = {
     async voiceAccessToken() { calls.push('token'); return 'mock-token'; },
     async searchTracks(query) { calls.push(['search', query]); return [song()]; },
-    async playTrack(...args) { calls.push(['play', ...args]); },
+    async player(options) { calls.push(['player', options]); return { is_playing: Boolean(playingUri), device: { id: 'test-device', name: 'Test speaker', is_active: true, is_restricted: false }, item: playingUri ? { uri: playingUri } : null }; },
+    async playTrack(...args) { calls.push(['play', ...args]); playingUri = args[0]; },
     ...options.client,
   };
   const controller = new VoiceController({ client,
@@ -159,8 +160,146 @@ test('ambiguous candidates require explicit tap; duplicate taps cannot dispatch 
 test('a playback failure is shown and never retried automatically', async () => {
   let plays = 0;
   const f = fixture({ client: { playTrack: async () => { plays++; throw new Error('Spotify 앱에서 곡을 먼저 재생해 주세요.'); } } });
-  await submit(f); assert.equal(plays, 1); assert.equal(f.controller.state.phase, 'error');
-  assert.equal(f.timers.size, 0); assert.equal(f.controller.active, false);
+  await submit(f); assert.equal(plays, 1); assert.equal(f.controller.state.phase, 'choosing');
+  assert.equal(f.controller.state.playbackError, true);
+  assert.deepEqual(f.controller.state.tracks, [song()]);
+  assert.equal(f.timers.size, 0); assert.equal(f.controller.active, true);
+  f.controller.cancel();
+});
+
+test('playback uses a fresh active device and only reports done after observing the selected track playing', async () => {
+  let reads = 0;
+  const f = fixture({ controller: { deviceId() { throw new Error('cached device must not be read'); } }, client: {
+    async player() { reads++; return { is_playing: reads > 1, device: { id: 'new-device', name: 'New speaker', is_active: true }, item: reads > 1 ? song() : null }; },
+  } });
+  await submit(f);
+  assert.equal(reads, 2);
+  assert.equal(f.calls.find(call => call[0] === 'play')[2], 'new-device');
+  assert.ok(f.changes.some(state => state.phase === 'verifying'));
+  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.controller.state.deviceName, 'New speaker');
+  assert.equal(f.controller.state.playbackError, false);
+});
+
+test('accepted playback of a wrong track, paused track, or different device is never reported as success', async () => {
+  for (const observed of [
+    { is_playing: true, device: { id: 'current' }, item: song('b') },
+    { is_playing: false, device: { id: 'current' }, item: song() },
+    { is_playing: true, device: { id: 'different' }, item: song() },
+  ]) {
+    let reads = 0;
+    const f = fixture({ client: { async player() { reads++; return reads === 1 ? { device: { id: 'current', name: 'Speaker', is_active: true } } : observed; } } });
+    await submit(f);
+    assert.equal(f.controller.state.phase, 'verifying');
+    for (let attempt = 0; attempt < 5; attempt++) { f.fire(PLAYBACK_CONFIRM_INTERVAL_MS); await tick(); }
+    assert.equal(reads, 7);
+    assert.equal(f.controller.state.phase, 'choosing');
+    assert.equal(f.controller.state.playbackError, true);
+    assert.match(f.controller.state.message, /재생을 확인하지 못/);
+    assert.deepEqual(f.controller.state.tracks, [song()]);
+    assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+    assert.equal(f.changes.some(state => state.phase === 'done'), false);
+    assert.equal(f.timers.size, 0);
+    f.controller.cancel();
+  }
+});
+
+test('market relinking confirms playback only through the original track URI', async () => {
+  const f = fixture({ client: { async player() { return { device: { id: 'current' }, is_playing: true, item: { ...song('b'), linked_from: { uri: song().uri } } }; } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+});
+
+test('missing, inactive, and restricted devices preserve candidates without sending a play command', async () => {
+  for (const [player, message] of [[null, /재생할 Spotify 기기/], [{ device: { id: null } }, /재생할 Spotify 기기/],
+    [{ device: { id: 'inactive', is_active: false } }, /재생할 Spotify 기기/], [{ device: { id: 'restricted', is_restricted: true } }, /원격 재생을 허용하지/]]) {
+    const f = fixture({ client: { async player() { return player; } } });
+    await submit(f);
+    assert.equal(f.controller.state.phase, 'choosing');
+    assert.match(f.controller.state.message, message);
+    assert.equal(f.controller.state.playbackError, true);
+    assert.deepEqual(f.controller.state.tracks, [song()]);
+    assert.equal(f.calls.some(call => call[0] === 'play'), false);
+    f.controller.cancel();
+  }
+});
+
+test('a playback failure can be retried from the retained candidate without recording or searching again', async () => {
+  let plays = 0;
+  const f = fixture({ client: {
+    async player() { return { device: { id: 'current', name: 'Speaker' }, is_playing: true, item: song() }; },
+    async playTrack() { if (++plays === 1) throw new Error('Temporary playback error'); },
+  } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'choosing');
+  assert.equal(f.controller.state.playbackError, true);
+  await f.controller.choose(song().uri);
+  assert.equal(plays, 2);
+  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.controller.state.playbackError, false);
+  assert.equal(f.calls.filter(call => call[0] === 'search').length, 1);
+  assert.equal(f.captures(), 1);
+});
+
+test('confirmation deadline includes a stalled network read and discards a late matching result', async () => {
+  const network = deferred(); let reads = 0, verificationSignal;
+  const f = fixture({ client: { async player({ signal }) {
+    if (++reads === 1) return { device: { id: 'current' } };
+    verificationSignal = signal; return network.promise;
+  } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'verifying');
+  f.fire(PLAYBACK_CONFIRM_TIMEOUT_MS); await tick();
+  assert.equal(verificationSignal.aborted, true);
+  assert.equal(f.controller.state.phase, 'choosing');
+  assert.equal(f.controller.state.playbackError, true);
+  assert.equal(f.timers.size, 0);
+  network.resolve({ device: { id: 'current' }, is_playing: true, item: song() }); await tick();
+  assert.equal(f.controller.state.phase, 'choosing');
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+  assert.equal(reads, 2);
+  f.controller.cancel();
+});
+
+test('cancelling the current-device lookup prevents a late response from issuing playback', async () => {
+  const network = deferred(); let lookupSignal;
+  const f = fixture({ client: { async player({ signal }) { lookupSignal = signal; return network.promise; } } });
+  await submit(f); f.controller.cancel();
+  assert.equal(lookupSignal.aborted, true);
+  network.resolve({ device: { id: 'late-device' } }); await tick();
+  assert.equal(f.calls.some(call => call[0] === 'play'), false);
+  assert.equal(f.controller.state.phase, 'idle');
+});
+
+test('cancelling confirmation interrupts even a network read that ignores abort', async () => {
+  const network = deferred(); let reads = 0, verificationSignal;
+  const f = fixture({ client: {
+    async searchTracks() { return [song(), song('b')]; },
+    async player({ signal }) { if (++reads === 1) return { device: { id: 'current' } }; verificationSignal = signal; return network.promise; },
+  } });
+  await submit(f);
+  const pending = f.controller.choose(song().uri); await tick();
+  assert.equal(f.controller.state.phase, 'verifying');
+  f.controller.cancel(); await pending;
+  assert.equal(verificationSignal.aborted, true);
+  assert.equal(f.controller.state.phase, 'idle');
+  assert.equal(f.timers.size, 0);
+  network.resolve({ device: { id: 'current' }, is_playing: true, item: song() }); await tick();
+  assert.equal(f.controller.state.phase, 'idle');
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+});
+
+test('cancelling between confirmation polls releases both timers and never polls or plays again', async () => {
+  let reads = 0;
+  const f = fixture({ client: { async player() { reads++; return { device: { id: 'current' }, is_playing: false, item: song() }; } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'verifying');
+  f.controller.cancel(); await tick();
+  assert.equal(f.timers.size, 0);
+  assert.equal(reads, 2);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+  assert.equal(f.controller.state.phase, 'idle');
 });
 
 function keylessFixture(options = {}) {

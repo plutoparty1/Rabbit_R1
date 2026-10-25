@@ -1,12 +1,12 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r31';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r31';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r31';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r31';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r31';
-import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r31';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r32';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r32';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r32';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r32';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r32';
+import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r32';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r31';
+import { setupPairing } from './pair-device.mjs?v=20261025-r32';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -311,7 +311,7 @@ function updateVoiceWake() {
 function renderVoiceAvailability() {
   if (!voiceController) return;
   const ready = voiceReady();
-  const label = !client.connected ? '음성 검색' : voiceController.active ? '음성 처리 중' : voiceMicrophoneRetry || voiceModelError ? '음성 다시 준비' : ready ? '녹음 가능' : '음성 준비 중';
+  const label = '말로 노래 찾기';
   $('voice-open').textContent = t(label);
   $('voice-open').dataset.ready = String(ready);
   $('voice-open').setAttribute('aria-label', t(label));
@@ -327,30 +327,32 @@ function renderVoice(state = voiceController.state) {
   const ready = voiceReady();
   const idlePresentation = voiceMicrophoneRetry
     ? ['마이크 준비 필요', voiceMicrophoneMessage || '브라우저의 마이크 권한을 허용한 뒤 한 번 눌러 다시 준비하세요.', '준비 중…']
-    : voiceModelError ? ['음성 준비 실패', voiceModelError, ready ? '누르고 다시 시도' : '준비 중…']
-    : ready ? ['녹음 가능', '우측 버튼을 누른 채 말하고 놓으세요.', '누르고 말하기']
-    : ['음성 준비 중', '버튼을 놓아도 됩니다. 앱이 자동으로 준비합니다.', '준비 중…'];
+    : voiceModelError ? ['노래 검색 준비 실패', voiceModelError, ready ? '누르고 다시 시도' : '준비 중…']
+    : ready ? ['누른 채 곡명을 말하세요', '우측 버튼을 누른 채 “아이유의 밤편지 틀어줘”라고 말하고 놓으세요.', '누른 채 곡명 말하기']
+    : ['마이크 연결 중', '앱이 자동으로 마이크를 연결합니다. 버튼은 놓아도 됩니다.', '마이크 연결 중…'];
   const transcribingPresentation = !localSpeech.ready
-    ? ['녹음 완료 · 인식기 준비 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 인식합니다.', '인식기 준비 중…']
+    ? ['노래 검색 준비 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 노래를 찾습니다.', '노래 검색 준비 중…']
     : localSpeech.draining
-      ? ['녹음 완료 · 이전 인식 정리 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 인식합니다.', '이전 인식 정리 중…']
-      : ['녹음 완료 · 인식 중', '버튼을 놓으셔도 됩니다. 인식한 문장을 기다려 주세요.', '인식 중…'];
+      ? ['이전 요청 마무리 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 노래를 찾습니다.', '이전 요청 마무리 중…']
+      : ['말한 내용을 글자로 바꾸는 중', '녹음을 마쳤습니다. 버튼을 놓고 기다려 주세요.', '말한 내용 확인 중…'];
   const presentation = {
     idle: idlePresentation,
-    preparing: ['녹음 시작', '말을 마치면 우측 버튼을 놓으세요.', '말을 마치면 놓으세요'],
-    recording: ['지금 말하세요', '말을 마치면 우측 버튼을 놓으세요.', '말을 마치면 놓으세요'],
+    preparing: ['마이크 켜는 중', '가수와 곡명을 말한 뒤 우측 버튼을 놓으세요.', '다 말하면 놓기'],
+    recording: ['듣는 중', '가수와 곡명을 말한 뒤 우측 버튼을 놓으세요.', '다 말하면 놓기'],
     transcribing: transcribingPresentation,
-    analyzing: ['녹음 완료 · 곡 확인 중', '버튼을 놓으셔도 됩니다.', '곡 확인 중…'],
-    searching: ['Spotify 검색 중', '버튼을 놓으셔도 됩니다.', '검색 중…'],
-    choosing: ['곡을 선택하세요', state.message, '위에서 곡을 선택하세요'],
-    playing: ['재생 요청 중', '버튼을 놓으셔도 됩니다.', '재생 요청 중…'],
-    done: ['재생을 요청했습니다', '다른 곡을 찾으려면 다시 누르세요.', '다시 누르기'],
+    analyzing: ['가수와 곡명 확인 중', '버튼을 놓으셔도 됩니다.', '곡 확인 중…'],
+    searching: ['Spotify에서 노래 찾는 중', '버튼을 놓으셔도 됩니다.', '노래 찾는 중…'],
+    choosing: [state.playbackError ? '재생을 확인하지 못했어요' : '재생할 노래를 눌러 주세요', state.message, state.playbackError ? '위 노래를 눌러 다시 시도' : '위에서 노래 선택'],
+    playing: ['Spotify에 재생 요청 중', '버튼을 놓으셔도 됩니다.', '재생 요청 중…'],
+    verifying: ['노래 재생 확인 중', '선택한 곡이 Spotify에서 재생되는지 확인하고 있습니다.', '재생 확인 중…'],
+    done: ['선택한 노래가 재생 중입니다', state.deviceName ? t('{device}에서 재생 중', getLocale(), { device: state.deviceName }) : 'Spotify에서 재생을 확인했습니다.', '다른 노래 말하기'],
     error: ['다시 시도해 주세요', state.message, '다시 누르기'],
   }[state.phase] || [state.message, '', '누르고 말하기'];
   $('voice-state').textContent = t(presentation[0]);
   $('voice-instruction').textContent = t(presentation[1]);
   $('voice-notice').hidden = state.phase !== 'idle' || !ready;
   $('voice-panel').dataset.phase = state.phase === 'idle' && !ready ? 'warming' : state.phase;
+  $('voice-panel').dataset.playbackError = String(Boolean(state.playbackError));
   if (state.phase === 'recording' && voiceRecordingTimer === null) {
     voiceRecordingStarted = performance.now();
     const elapsed = () => { $('voice-elapsed').textContent = time(performance.now() - voiceRecordingStarted); };
@@ -361,14 +363,17 @@ function renderVoice(state = voiceController.state) {
   }
   $('voice-recording').hidden = state.phase !== 'recording';
   $('voice-transcript').textContent = state.transcript;
-  $('voice-transcript').hidden = !state.transcript;
+  $('voice-transcript').hidden = !state.transcript || Boolean(state.playbackError);
   $('voice-language').textContent = state.language ? t('감지한 언어: {language}', getLocale(), { language: state.language }) : '';
+  $('voice-language').hidden = !state.language || Boolean(state.playbackError);
+  $('voice-record').hidden = state.phase === 'choosing';
   $('voice-record').disabled = !['preparing', 'recording'].includes(state.phase) && (!ready || active);
   $('voice-record').setAttribute('aria-pressed', String(state.phase === 'recording'));
   $('voice-record').textContent = t(presentation[2]);
   $('voice-results').replaceChildren();
   for (const track of state.tracks) {
     const button = document.createElement('button'); button.type = 'button';
+    button.disabled = state.phase !== 'choosing';
     const title = document.createElement('strong'), artist = document.createElement('span');
     title.textContent = track.name; artist.textContent = track.artists.map(item => item.name).join(', ');
     button.append(title, artist); button.onclick = () => void voiceController.choose(track.uri);

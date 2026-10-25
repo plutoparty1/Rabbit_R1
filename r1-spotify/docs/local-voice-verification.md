@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r31`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r32`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,26 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r32 song selection and clear labels / 곡 선택과 기능 안내
+
+The user reported that selecting a candidate showed “Playback requested” while the song did not change. The r31 controller retained the device ID captured at recording start, sent a playback PUT to that ID and immediately completed when the request resolved. It never checked the actual playing track. A controlled reproduction with a changed active device showed one PUT to the stale device, zero playback-state reads and a completed UI while another track remained playing. This reproduces the software failure mode; the exact Spotify/device cause on the user's r1 has not been observed.
+
+사용자는 후보를 누르면 ‘재생을 요청했습니다’가 뜨지만 곡이 바뀌지 않는다고 보고했습니다. 기존 코드는 녹음 시작 당시 기기 ID로 요청하고, 응답이 오면 실제 재생 곡을 확인하지 않은 채 완료했습니다. 모의 환경에서 기기가 바뀐 뒤에도 이전 ID로 PUT 한 번만 보내고 완료하는 현상을 재현했습니다. 사용자 실기에서 Spotify가 곡을 바꾸지 않은 정확한 원인을 확정한 것은 아닙니다.
+
+r32 reads the current Spotify playback device immediately before requesting the selected song. After the PUT, it checks actual playback state and only reports completion for the requested track (including Spotify track relinking), playing on the target device. A bounded verification wait, cancellation and explicit errors prevent a request acknowledgement from appearing as verified playback. Failed verification keeps the candidates so the user can retry without repeating speech; the app does not automatically send another play command. A cancellation after Spotify has already accepted a command cannot undo that command.
+
+r32는 선택 시점의 Spotify 재생 기기를 다시 조회하고, 요청 뒤 선택한 곡이 해당 기기에서 재생 중인지 확인해야 완료합니다. 확인되지 않으면 후보와 이유를 남겨 음성을 다시 말하지 않고 재시도할 수 있습니다. 같은 재생 명령을 자동으로 반복 전송하지 않습니다. Spotify가 이미 받은 명령은 확인 화면을 닫는 것으로 되돌릴 수 없습니다.
+
+The entry button, panel title and settings use the stable feature name “말로 노래 찾기” / “Find by voice.” Microphone connection, listening, speech-to-text, song search and playback confirmation are explained inside the panel. Recording readiness does not imply that the recognition model has finished loading. Prepared microphone and model reuse from r31 remain unchanged.
+
+진입 버튼·창 제목·설정 이름은 ‘말로 노래 찾기’로 통일합니다. 마이크 연결·말 듣기·음성을 글자로 바꾸기·Spotify 검색·재생 확인은 창 안에서 구분하며, 마이크 준비 완료를 모델 준비 완료와 혼동하지 않도록 합니다. r31의 마이크와 모델 재사용은 유지합니다.
+
+Validation: all 201 repository Node tests passed after rebuilding. Tests cover a changed playback device, a successful PUT followed by the wrong track/paused state/wrong device, relinked tracks, unavailable or restricted devices, manual retry, cancellation before PUT and during confirmation, stalled network reads, stale results and cache bypass. Confirmation uses up to six state reads with one-second spacing and an eight-second deadline including those network reads. Preflight and PUT retain the existing per-request timeout; the eight seconds applies to confirmation after the PUT response. The existing 401 token-refresh recovery is unchanged.
+
+Korean/English browser checks passed at 240×282 and 240×240 with controlled microphone/model/Spotify responses: the stable feature name, listening indication, candidate selection, actual-state verification, failure retaining visible retry candidates and a changed current device were checked. Each locale sent five test playback requests, with zero voice uploads and zero page errors. Screenshots were inspected. These checks do not establish the user's actual device status, audible output or Spotify account behavior.
+
+References: Spotify [start playback](https://developer.spotify.com/documentation/web-api/reference/start-a-users-playback), [read playback state](https://developer.spotify.com/documentation/web-api/reference/get-information-about-the-users-current-playback) and [device ID caching/restrictions](https://developer.spotify.com/documentation/web-api/reference/get-a-users-available-devices).
 
 ## r31 repeated preparation / 반복 준비 대기
 
@@ -135,7 +155,7 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
-For the main player, open `?v=20261025-r31` and leave the physical button released while the microphone prepares. Allow access if requested, or tap the retry control once after a rejected attempt. At “Ready to record,” make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. / 재생 화면 r31에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘녹음 가능’이 뜨면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 버튼을 누르지 않고 다시 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다.
+For the main player, open `?v=20261025-r32` and leave the physical button released while the microphone connects. Allow access if requested, or tap the retry control once after a rejected attempt. In “Find by voice,” once the microphone is connected, make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. Select a candidate and check that its title and the displayed playback device match actual Spotify playback; an unconfirmed request must retain the list and show the reason. / 재생 화면 r32에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘말로 노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 자동 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다. 후보를 선택한 뒤 곡명과 표시된 기기가 실제 Spotify 재생과 맞는지 확인합니다. 확인되지 않은 요청에는 이유와 후보가 남아야 합니다.
 
 The separate diagnostic flow remains:
 
@@ -160,7 +180,7 @@ A successful transcript establishes only the tested device/language/request. Con
 
 The main player prepares the model, microphone and paused recorder automatically before a hold. Once the microphone is ready, hold, speak and release (60-second stuck-button ceiling), even if the model is still preparing. The user does not hold during microphone preparation. The separate diagnostic page retains an explicit preparation control for isolating model loading.
 
-재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 마이크 준비 동안 버튼을 누를 필요가 없으며, ‘녹음 가능’이 뜨면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
+재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 마이크 준비 동안 버튼을 누를 필요가 없으며, ‘말로 노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
 
 The retained Gemini module is a developer-only legacy option. The r25 default player does not call `/api/voice/config` or `/api/voice/search`; merely setting Gemini secrets does not select it.
 
