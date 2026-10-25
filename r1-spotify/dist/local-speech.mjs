@@ -3,6 +3,7 @@
 const MAX_BYTES = 2 * 1024 * 1024;
 const SAMPLE_RATE = 16000;
 const MAX_SAMPLES = 60 * SAMPLE_RATE;
+const CANCELLED_JOB_GRACE_MS = 3000;
 const languages = new Map([['', ''], ['ko-KR', 'ko'], ['en-US', 'en'], ['ja-JP', 'ja']]);
 const workerErrors = new Set(['model_load_failed', 'transcription_failed', 'invalid_audio', 'busy']);
 const failure = code => Object.assign(new Error(code), { code });
@@ -71,12 +72,14 @@ export class LocalSpeechProbe {
     this.worker = null;
     this.sequence = 0;
     this.cancelEpoch = 0;
+    this.waitingTranscription = null;
     this.modelReady = false;
     this.disposed = false;
   }
   get AudioContext() { return this.host.AudioContext || this.host.webkitAudioContext; }
   get supported() { return typeof this.host.Worker === 'function' && typeof this.AudioContext === 'function' && typeof this.host.MediaRecorder === 'function' && typeof this.host.navigator?.mediaDevices?.getUserMedia === 'function'; }
   get active() { return this.session !== null; }
+  get draining() { return this.session?.phase === 'draining'; }
   get ready() { return this.modelReady && !!this.worker && !this.disposed; }
   createContext() {
     // decodeAudioData resamples to this rate using the browser's audio filter.
@@ -130,12 +133,22 @@ export class LocalSpeechProbe {
     this.session = null;
     this.cleanup(session);
     if (terminate) this.terminateWorker();
-    this.emit(code ? { state: code === 'cancelled' ? 'cancelled' : 'error', code } : session.phase === 'loading' ? { state: 'ready' } : { state: 'success', result });
+    this.emit(code ? { state: code === 'cancelled' ? 'cancelled' : 'error', code } : ['loading', 'draining'].includes(session.phase) ? { state: 'ready' } : { state: 'success', result });
+    // The cancelled caller was already rejected. Its late output is discarded;
+    // only waiting callers need to know that the worker is available again.
+    if (session.phase === 'draining') { session.resolveDrain({ code }); return; }
     if (code) session.reject(failure(code)); else session.resolve(result);
   }
   async prepare() {
     if (this.disposed) throw failure('disposed');
     if (this.session?.phase === 'loading') return this.session.promise;
+    if (this.draining) {
+      const outcome = await this.session.drainPromise;
+      if (this.disposed) throw failure('disposed');
+      if (outcome.code === 'cancelled') throw failure('cancelled');
+      if (this.ready) return { ready: true };
+      return this.prepare();
+    }
     if (this.active) throw failure('busy');
     if (this.ready) return { ready: true };
     if (!this.supported) throw failure('unsupported');
@@ -174,6 +187,10 @@ export class LocalSpeechProbe {
         for (const key of ['loaded', 'total', 'progress']) if (Number.isFinite(source[key]) && source[key] >= 0) progress[key] = source[key];
         this.emit({ state: 'loading', progress });
       }
+      return;
+    }
+    if (session.phase === 'draining') {
+      if (message.type === 'result') this.finish(session, { ready: true });
       return;
     }
     if (session.phase !== 'transcribing' || message.type !== 'result') return;
@@ -260,8 +277,32 @@ export class LocalSpeechProbe {
     if (this.disposed) throw failure('disposed');
     const language = this.validateLanguage(lang);
     const epoch = this.cancelEpoch;
-    // The player captures immediately; only transcription joins model loading.
-    if (!this.ready) await this.prepare();
+    // Capture can start while the model loads or finishes a cancelled request.
+    // Keep at most one waiting recording, and release it promptly on cancel.
+    if (this.waitingTranscription) throw failure('busy');
+    if (!this.ready || this.draining) {
+      const waiting = {};
+      const cancelled = new Promise((_, reject) => { waiting.reject = reject; });
+      this.waitingTranscription = waiting;
+      try {
+        if (this.draining) {
+          const previous = this.session;
+          // Inference cannot be interrupted cooperatively. Reuse its model if it
+          // finishes shortly, but do not make a new request wait for a long one.
+          waiting.timer = this.setTimer(() => {
+            if (this.waitingTranscription === waiting && this.current(previous)) this.finish(previous, null, 'cancelled', true);
+          }, CANCELLED_JOB_GRACE_MS);
+          await Promise.race([previous.drainPromise, cancelled]);
+          this.clearTimer(waiting.timer);
+          waiting.timer = undefined;
+        }
+        if (epoch !== this.cancelEpoch) throw failure('cancelled');
+        if (!this.ready) await Promise.race([this.prepare(), cancelled]);
+      } finally {
+        if (waiting.timer !== undefined) this.clearTimer(waiting.timer);
+        if (this.waitingTranscription === waiting) this.waitingTranscription = null;
+      }
+    }
     if (epoch !== this.cancelEpoch) throw failure('cancelled');
     this.checkReady();
     const session = this.create('transcribing');
@@ -293,17 +334,38 @@ export class LocalSpeechProbe {
       const audio = resampleToMono16k(decoded);
       this.closeContext(session);
       if (!this.worker || !this.modelReady) throw failure('local_not_ready');
-      try { this.worker.postMessage({ id: session.id, type: 'transcribe', audio, language: session.language }, [audio.buffer]); }
+      try {
+        session.workerSubmitted = true;
+        this.worker.postMessage({ id: session.id, type: 'transcribe', audio, language: session.language }, [audio.buffer]);
+      }
       catch { this.finish(session, null, 'local_worker_failed', true); }
     } catch (reason) {
       const code = ['invalid_audio', 'audio_too_long', 'empty_audio', 'local_not_ready'].includes(reason?.code) ? reason.code : 'decode_failed';
       this.finish(session, null, code);
     }
   }
-  cancel() {
+  cancel({ preserveModel = false } = {}) {
     this.cancelEpoch++;
+    const waiting = this.waitingTranscription;
+    if (waiting) {
+      this.waitingTranscription = null;
+      if (waiting.timer !== undefined) this.clearTimer(waiting.timer);
+      waiting.reject(failure('cancelled'));
+    }
     const session = this.session;
-    if (session) this.finish(session, null, 'cancelled', ['loading', 'transcribing'].includes(session.phase));
+    if (!session) return;
+    if (preserveModel) {
+      // Loading contains no recording and can finish for the next request.
+      if (['loading', 'draining'].includes(session.phase)) return;
+      if (session.phase === 'transcribing' && session.workerSubmitted) {
+        session.phase = 'draining';
+        session.drainPromise = new Promise(resolve => { session.resolveDrain = resolve; });
+        session.reject(failure('cancelled'));
+        this.emit({ state: 'draining' });
+        return;
+      }
+    }
+    this.finish(session, null, 'cancelled', !preserveModel && ['loading', 'transcribing', 'draining'].includes(session.phase));
   }
   dispose() { this.cancel(); this.disposed = true; this.terminateWorker(); }
 }

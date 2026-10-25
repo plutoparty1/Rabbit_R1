@@ -38,7 +38,7 @@ export function keylessVoiceMessage(error) {
 // Audio and command interpretation stay local. Only the search terms go to Spotify.
 export function createKeylessTranscriber(recognizer) {
   const cancelled = () => Object.assign(new Error('cancelled'), { code: 'cancelled' });
-  const cancel = () => recognizer.cancel();
+  const cancel = () => recognizer.cancel({ preserveModel: true });
   return {
     get ready() { return recognizer.ready; },
     get supported() { return recognizer.supported; },

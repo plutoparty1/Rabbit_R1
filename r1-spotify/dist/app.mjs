@@ -1,12 +1,12 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r30';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r30';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r30';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r30';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r30';
-import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r30';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r31';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r31';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r31';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r31';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r31';
+import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r31';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r30';
+import { setupPairing } from './pair-device.mjs?v=20261025-r31';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -15,7 +15,9 @@ let startupReady = false;
 let pairingController = null;
 let voiceController = null, voiceOpen = false, voiceWasActive = false, voiceFocus = null, voicePointer = null, longPressReset;
 let voiceModelLoading = false, voiceModelPromise = null, voiceModelError = '';
+let voiceModelPhase = 'initializing', voiceModelPhaseStarted = 0, voiceModelProgress = null;
 let voiceMicrophonePhase = 'idle', voiceMicrophoneMessage = '', voiceMicrophoneRetry = false;
+let voiceMicrophoneStarted = 0, voiceTranscriptionStarted = 0, voiceDrainStarted = 0, voiceWaitTimer = null;
 let voicePreparationStopped = false;
 let voiceRecordingTimer = null, voiceRecordingStarted = 0;
 let player = normalizePlayer(null), sampledAt = performance.now(), busy = false, stale = false;
@@ -301,14 +303,15 @@ function closeVoice() {
   voiceFocus = null; controls();
   updateVoiceWake();
 }
-function voiceReady() { return Boolean(voiceController?.microphoneReady && localSpeech.ready && !voiceController.active); }
+// Model initialization can finish after release; it must never block a prepared recorder.
+function voiceReady() { return Boolean(voiceController?.microphoneReady && localSpeech.supported && !voiceController.active); }
 function updateVoiceWake() {
   void screenWake.setActive(Boolean(startupReady && client.connected && !voicePreparationStopped && !document.hidden && !suspended && (voiceOpen || voiceMicrophonePhase === 'preparing' || voiceModelLoading)));
 }
 function renderVoiceAvailability() {
   if (!voiceController) return;
   const ready = voiceReady();
-  const label = !client.connected ? '음성 검색' : voiceController.active ? '음성 처리 중' : voiceMicrophoneRetry || voiceModelError ? '음성 다시 준비' : ready ? '음성 사용 가능' : '음성 준비 중';
+  const label = !client.connected ? '음성 검색' : voiceController.active ? '음성 처리 중' : voiceMicrophoneRetry || voiceModelError ? '음성 다시 준비' : ready ? '녹음 가능' : '음성 준비 중';
   $('voice-open').textContent = t(label);
   $('voice-open').dataset.ready = String(ready);
   $('voice-open').setAttribute('aria-label', t(label));
@@ -324,14 +327,19 @@ function renderVoice(state = voiceController.state) {
   const ready = voiceReady();
   const idlePresentation = voiceMicrophoneRetry
     ? ['마이크 준비 필요', voiceMicrophoneMessage || '브라우저의 마이크 권한을 허용한 뒤 한 번 눌러 다시 준비하세요.', '준비 중…']
-    : voiceModelError ? ['음성 준비 실패', voiceModelError, '준비 중…']
-    : ready ? ['음성 사용 가능', '우측 버튼을 누른 채 말하고 놓으세요.', '누르고 말하기']
+    : voiceModelError ? ['음성 준비 실패', voiceModelError, ready ? '누르고 다시 시도' : '준비 중…']
+    : ready ? ['녹음 가능', '우측 버튼을 누른 채 말하고 놓으세요.', '누르고 말하기']
     : ['음성 준비 중', '버튼을 놓아도 됩니다. 앱이 자동으로 준비합니다.', '준비 중…'];
+  const transcribingPresentation = !localSpeech.ready
+    ? ['녹음 완료 · 인식기 준비 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 인식합니다.', '인식기 준비 중…']
+    : localSpeech.draining
+      ? ['녹음 완료 · 이전 인식 정리 중', '녹음을 마쳤습니다. 준비가 끝나면 자동으로 인식합니다.', '이전 인식 정리 중…']
+      : ['녹음 완료 · 인식 중', '버튼을 놓으셔도 됩니다. 인식한 문장을 기다려 주세요.', '인식 중…'];
   const presentation = {
     idle: idlePresentation,
     preparing: ['녹음 시작', '말을 마치면 우측 버튼을 놓으세요.', '말을 마치면 놓으세요'],
     recording: ['지금 말하세요', '말을 마치면 우측 버튼을 놓으세요.', '말을 마치면 놓으세요'],
-    transcribing: ['녹음 완료 · 인식 중', '버튼을 놓으셔도 됩니다. 인식한 문장을 기다려 주세요.', '인식 중…'],
+    transcribing: transcribingPresentation,
     analyzing: ['녹음 완료 · 곡 확인 중', '버튼을 놓으셔도 됩니다.', '곡 확인 중…'],
     searching: ['Spotify 검색 중', '버튼을 놓으셔도 됩니다.', '검색 중…'],
     choosing: ['곡을 선택하세요', state.message, '위에서 곡을 선택하세요'],
@@ -371,30 +379,65 @@ function renderVoice(state = voiceController.state) {
   renderVoiceModel();
   updateVoiceWake();
 }
-function renderVoiceModel(message) {
+function renderVoiceWaitStatus() {
+  const phase = voiceController?.state.phase;
+  const capturePhase = ['preparing', 'recording'].includes(phase);
+  const elapsed = started => time(Math.max(0, performance.now() - started));
+  const wait = voiceMicrophonePhase === 'preparing'
+    ? t('마이크 연결 · {elapsed}', getLocale(), { elapsed: elapsed(voiceMicrophoneStarted) })
+    : phase === 'transcribing' && localSpeech.draining
+      ? t('이전 인식 정리 · {elapsed}', getLocale(), { elapsed: elapsed(voiceDrainStarted) })
+      : phase === 'transcribing' && localSpeech.ready && voiceTranscriptionStarted
+        ? t('음성을 글자로 변환 · {elapsed}', getLocale(), { elapsed: elapsed(voiceTranscriptionStarted) }) : '';
+  $('voice-wait-status').hidden = !voiceOpen || capturePhase || !wait;
+  $('voice-wait-status').textContent = wait;
+  let model = voiceModelError;
+  if (!model && voiceModelLoading) {
+    model = voiceModelPhase === 'download'
+      ? t('인식기 파일 불러오기 · {elapsed}', getLocale(), { elapsed: elapsed(voiceModelPhaseStarted) })
+      : t('인식기 실행 준비 · {elapsed}', getLocale(), { elapsed: elapsed(voiceModelPhaseStarted) });
+    if (voiceModelPhase === 'download' && Number.isFinite(voiceModelProgress)) {
+      model += ' · ' + t('현재 파일 {progress}%', getLocale(), { progress: Math.round(Math.max(0, Math.min(100, voiceModelProgress))) });
+    }
+  }
+  $('voice-model-status').hidden = !voiceOpen || capturePhase || !model;
+  $('voice-model-status').textContent = model;
+  const waiting = voiceOpen && !capturePhase && (voiceModelLoading || voiceMicrophonePhase === 'preparing' || phase === 'transcribing');
+  if (waiting && voiceWaitTimer === null) voiceWaitTimer = setInterval(renderVoiceWaitStatus, 500);
+  else if (!waiting && voiceWaitTimer !== null) { clearInterval(voiceWaitTimer); voiceWaitTimer = null; }
+}
+function renderVoiceModel() {
   const active = Boolean(voiceController?.active);
   const capturePhase = ['preparing', 'recording'].includes(voiceController?.state.phase);
   $('voice-prepare').hidden = capturePhase || !voiceModelError;
   $('voice-prepare').disabled = voiceModelLoading || active;
   $('voice-enable').hidden = !voiceMicrophoneRetry || active;
   $('voice-enable').disabled = voiceMicrophonePhase === 'preparing';
-  $('voice-model-status').hidden = capturePhase || (!voiceModelError && (localSpeech.ready || !voiceModelLoading));
-  $('voice-model-status').textContent = message || voiceModelError || t('음성 모델 준비 중 · 녹음 시작 표시와는 별개입니다.');
+  renderVoiceWaitStatus();
   $('voice-record').disabled = !['preparing', 'recording'].includes(voiceController.state.phase) && (!voiceReady() || active);
   renderVoiceAvailability(); updateVoiceWake();
 }
 const localSpeech = new LocalSpeechProbe({ onState(event) {
   if (event.state === 'loading') {
+    const phase = ['download', 'progress'].includes(event.progress?.status) ? 'download' : 'initializing';
+    if (!voiceModelLoading || voiceModelPhase !== phase) voiceModelPhaseStarted = performance.now();
+    voiceModelPhase = phase;
+    voiceModelProgress = phase === 'download' ? event.progress?.progress : null;
     voiceModelLoading = true; voiceModelError = '';
-    const progress = event.progress?.progress;
-    renderVoiceModel(Number.isFinite(progress) ? t('음성 모델 파일 준비 {progress}%', getLocale(), { progress: Math.round(Math.max(0, Math.min(100, progress))) }) : undefined);
+    voiceTranscriptionStarted = 0;
+    if (voiceOpen && ['idle', 'transcribing'].includes(voiceController?.state.phase)) renderVoice(); else renderVoiceModel();
+  } else if (event.state === 'draining') {
+    voiceDrainStarted = performance.now(); voiceTranscriptionStarted = 0;
+    if (voiceOpen && voiceController?.state.phase === 'transcribing') renderVoice(); else renderVoiceModel();
   } else if (['ready', 'cancelled', 'transcribing', 'success'].includes(event.state)) {
     voiceModelLoading = false; voiceModelError = '';
+    if (event.state === 'transcribing') voiceTranscriptionStarted = performance.now();
+    else voiceTranscriptionStarted = 0;
     renderVoiceModel();
     if (event.state === 'transcribing' && voiceController?.active && voiceController.state.phase === 'transcribing') {
       voiceController.update({ message: '기기에서 음성을 글자로 바꾸고 있습니다. 잠시 기다려 주세요.' });
     }
-    if (voiceOpen && voiceController && !voiceController.active) renderVoice();
+    if (voiceOpen && voiceController) renderVoice();
   } else if (event.state === 'error') {
     voiceModelLoading = false;
     voiceModelError = localSpeech.ready ? '' : t(keylessVoiceMessage(event));
@@ -405,11 +448,12 @@ const localSpeech = new LocalSpeechProbe({ onState(event) {
 voiceController = new VoiceController({ client, onChange: renderVoice, transcriber: createKeylessTranscriber(localSpeech),
   requirePreparedMicrophone: true,
   onPreparationChange(event) {
+    if (event.phase === 'preparing' && voiceMicrophonePhase !== 'preparing') voiceMicrophoneStarted = performance.now();
     voiceMicrophonePhase = event.phase; voiceMicrophoneMessage = event.message || '';
     if (event.phase === 'error') voiceMicrophoneRetry = true;
     else if (event.phase === 'ready') voiceMicrophoneRetry = false;
     if (voiceOpen) renderVoice();
-    else { renderVoiceAvailability(); updateVoiceWake(); }
+    else { renderVoiceModel(); updateVoiceWake(); }
   },
   canStart: () => startupReady && client.connected && !busy && !document.hidden && !suspended && ['player', 'lyrics'].includes(screen),
   deviceId: () => player.deviceId || undefined,
@@ -429,12 +473,14 @@ function prepareVoiceStartup(retry = false) {
 }
 function beginVoiceCapture() {
   if (!voiceReady()) { void prepareVoiceStartup(); renderVoice(); return; }
+  if (voiceModelError) void prepareVoiceModel(true);
   void voiceController.begin();
 }
 function prepareVoiceModel(retry = false) {
   if (!client.connected || voicePreparationStopped || document.hidden || suspended || !localSpeech.supported || localSpeech.ready) return;
   if (voiceModelPromise) return voiceModelPromise;
   if (voiceModelError && !retry) return;
+  voiceModelPhase = 'initializing'; voiceModelPhaseStarted = performance.now(); voiceModelProgress = null;
   voiceModelLoading = true; voiceModelError = ''; renderVoiceModel();
   const pending = localSpeech.prepare().catch(error => {
     if (error?.code !== 'cancelled') voiceModelError = t(keylessVoiceMessage(error));

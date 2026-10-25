@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { LocalSpeechProbe, resampleToMono16k } from '../dist/local-speech.mjs';
+import { createKeylessTranscriber } from '../dist/voice.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
@@ -269,6 +270,190 @@ test('transcription timeout and cancellation ignore late worker results and disc
   assert.equal(f.events.some(event => event.state === 'success'), false);
   assert.equal(f.workers[1].terminated, true);
   assert.equal(f.timers.size, 0);
+});
+
+test('player cancellation releases a waiting recording immediately but preserves shared model loading', async () => {
+  const f = fixture(), loading = f.probe.prepare(), worker = f.workers[0];
+  const old = f.probe.transcribeBlob(new Blob(['discarded recording']));
+  const cancelled = assert.rejects(old, { code: 'cancelled' });
+  f.probe.cancel({ preserveModel: true }); await cancelled;
+  assert.equal(f.probe.active, true);
+  assert.equal(worker.terminated, undefined);
+  assert.equal(f.events.at(-1).state, 'loading');
+  const next = f.probe.transcribeBlob(new Blob(['current recording']));
+  await assert.rejects(f.probe.transcribeBlob(new Blob(['extra recording'])), { code: 'busy' });
+  worker.reply('ready'); await loading; await tick();
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.contexts.length, 1);
+  assert.equal(worker.messages.length, 2);
+  worker.reply('result', { text: 'current song', language: 'en' });
+  assert.equal((await next).transcript, 'current song');
+  assert.deepEqual(f.events.filter(event => event.state === 'success').map(event => event.result.transcript), ['current song']);
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('player cancellation while decoding discards late decoded audio and reuses the loaded worker', async () => {
+  const f = fixture(); await f.ready();
+  const decode = deferred(); f.decodePromise = decode.promise;
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); f.probe.cancel({ preserveModel: true }); await cancelled;
+  assert.equal(f.contexts[0].closed, true);
+  assert.equal(f.probe.ready, true);
+  assert.equal(f.probe.draining, false);
+  f.decodePromise = null;
+  const next = f.probe.transcribeBlob(new Blob(['next'])); await tick();
+  decode.resolve(f.decoded); await tick();
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.workers[0].messages.length, 2);
+  f.workers[0].reply('result', { text: 'next song', language: 'en' });
+  assert.equal((await next).transcript, 'next song');
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('cancelled inference drains without publishing its result and the next request reuses the same worker', async () => {
+  const f = fixture(); await f.ready();
+  const worker = f.workers[0];
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); const oldId = worker.messages.at(-1).data.id;
+  f.probe.cancel({ preserveModel: true }); await cancelled;
+  f.probe.cancel({ preserveModel: true });
+  assert.equal(f.probe.draining, true);
+  assert.equal(f.probe.ready, true);
+  assert.equal(worker.terminated, undefined);
+  assert.deepEqual(f.events.at(-1), { state: 'draining' });
+  assert.equal([...f.timers.values()].some(timer => timer.ms === 120000), true);
+  assert.equal([...f.timers.values()].some(timer => timer.ms === 3000), false);
+  const joined = f.probe.prepare(), next = f.probe.transcribeBlob(new Blob(['next']));
+  await assert.rejects(f.probe.transcribeBlob(new Blob(['extra'])), { code: 'busy' });
+  await tick();
+  assert.equal(worker.messages.length, 2);
+  assert.equal(f.contexts.length, 1);
+  worker.reply('result', { text: 'never publish this private transcript', language: 'en' }, oldId);
+  await joined; await tick();
+  assert.equal(f.probe.draining, false);
+  assert.equal(f.workers.length, 1);
+  assert.equal(worker.messages.length, 3);
+  worker.reply('result', { text: 'another stale result', language: 'en' }, oldId);
+  worker.reply('result', { text: 'next song', language: 'en' });
+  assert.equal((await next).transcript, 'next song');
+  assert.deepEqual(f.events.filter(event => event.state === 'success').map(event => event.result.transcript), ['next song']);
+  assert.equal(JSON.stringify(f.events).includes('private transcript'), false);
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('a new request waits at most three seconds for cancelled inference before restarting the worker', async () => {
+  const f = fixture(); await f.ready();
+  const worker = f.workers[0];
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); const late = worker.onmessage, oldId = worker.messages.at(-1).data.id;
+  f.probe.cancel({ preserveModel: true }); await cancelled;
+  const next = f.probe.transcribeBlob(new Blob(['next']));
+  f.fire(3000); await tick();
+  assert.equal(worker.terminated, true);
+  assert.equal(f.workers.length, 2);
+  assert.equal(f.probe.ready, false);
+  assert.equal(f.events.at(-1).state, 'loading');
+  late({ data: { id: oldId, type: 'result', text: 'stale song', language: 'en' } });
+  f.workers[1].reply('ready'); await tick();
+  assert.equal(f.workers[1].messages.at(-1).data.type, 'transcribe');
+  f.workers[1].reply('result', { text: 'next song', language: 'en' });
+  assert.equal((await next).transcript, 'next song');
+  assert.deepEqual(f.events.filter(event => event.state === 'success').map(event => event.result.transcript), ['next song']);
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('cancelling the queued request clears its restart timer and permits only the latest recording', async () => {
+  const f = fixture(); await f.ready();
+  const worker = f.workers[0];
+  const first = f.probe.transcribeBlob(new Blob(['first'])), firstCancelled = assert.rejects(first, { code: 'cancelled' });
+  await tick(); const firstId = worker.messages.at(-1).data.id;
+  f.probe.cancel({ preserveModel: true }); await firstCancelled;
+  const second = f.probe.transcribeBlob(new Blob(['second'])), secondCancelled = assert.rejects(second, { code: 'cancelled' });
+  f.probe.cancel({ preserveModel: true }); await secondCancelled;
+  assert.equal([...f.timers.values()].some(timer => timer.ms === 3000), false);
+  const latest = f.probe.transcribeBlob(new Blob(['latest']));
+  worker.reply('result', { text: 'discarded', language: 'en' }, firstId); await tick();
+  assert.equal(worker.terminated, undefined);
+  assert.equal(worker.messages.length, 3);
+  worker.reply('result', { text: 'latest song', language: 'en' });
+  assert.equal((await latest).transcript, 'latest song');
+  assert.equal(f.contexts.length, 2);
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('preserved cancelled jobs still have a bounded watchdog and a waiting request recovers from worker failure', async () => {
+  const f = fixture(); await f.ready();
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); f.probe.cancel({ preserveModel: true }); await cancelled;
+  f.fire(120000);
+  assert.equal(f.probe.ready, false);
+  assert.equal(f.probe.draining, false);
+  assert.equal(f.workers[0].terminated, true);
+  assert.deepEqual(f.events.at(-1), { state: 'error', code: 'local_transcription_timeout' });
+  assert.equal(f.timers.size, 0);
+  await f.ready();
+  const second = f.probe.transcribeBlob(new Blob(['second'])), secondCancelled = assert.rejects(second, { code: 'cancelled' });
+  await tick(); f.probe.cancel({ preserveModel: true }); await secondCancelled;
+  const next = f.probe.transcribeBlob(new Blob(['next']));
+  f.workers[1].reply('error', { code: 'transcription_failed' }); await tick();
+  assert.equal(f.workers[1].terminated, true);
+  assert.equal(f.workers.length, 3);
+  f.workers[2].reply('ready'); await tick();
+  f.workers[2].reply('result', { text: 'recovered song', language: 'en' });
+  assert.equal((await next).transcript, 'recovered song');
+  assert.equal(f.timers.size, 0);
+  f.probe.dispose();
+});
+
+test('dispose force-closes a draining worker and rejects its waiting recording', async () => {
+  const f = fixture(); await f.ready();
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); f.probe.cancel({ preserveModel: true }); await cancelled;
+  const next = f.probe.transcribeBlob(new Blob(['next'])), nextCancelled = assert.rejects(next, { code: 'cancelled' });
+  f.probe.dispose(); await nextCancelled; await tick();
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.workers[0].terminated, true);
+  assert.equal(f.probe.ready, false);
+  assert.equal(f.probe.draining, false);
+  assert.equal(f.timers.size, 0);
+  assert.equal(f.probe.waitingTranscription, null);
+});
+
+test('hard cancellation cannot let preparation waiting on a draining job restart the worker', async () => {
+  const f = fixture(); await f.ready();
+  const old = f.probe.transcribeBlob(new Blob(['old'])), cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); f.probe.cancel({ preserveModel: true }); await cancelled;
+  const preparing = f.probe.prepare(), preparationCancelled = assert.rejects(preparing, { code: 'cancelled' });
+  f.probe.cancel(); await preparationCancelled; await tick();
+  assert.equal(f.workers.length, 1);
+  assert.equal(f.workers[0].terminated, true);
+  assert.equal(f.probe.active, false);
+  assert.equal(f.probe.ready, false);
+  assert.equal(f.timers.size, 0);
+});
+
+test('the player adapter abort preserves the worker and never publishes cancelled speech', async () => {
+  const f = fixture(); await f.ready();
+  const transcriber = createKeylessTranscriber(f.probe), controller = new AbortController(), transcripts = [];
+  const old = transcriber.recognize(new Blob(['old']), { signal: controller.signal, onTranscript: text => transcripts.push(text) });
+  const cancelled = assert.rejects(old, { code: 'cancelled' });
+  await tick(); controller.abort(); transcriber.cancel(); await cancelled;
+  assert.equal(f.probe.draining, true);
+  assert.equal(f.workers[0].terminated, undefined);
+  f.workers[0].reply('result', { text: 'cancelled song', language: 'en' });
+  assert.deepEqual(transcripts, []);
+  const next = transcriber.recognize(new Blob(['next']), { onTranscript: text => transcripts.push(text) });
+  await tick(); f.workers[0].reply('result', { text: '아이유의 밤편지 틀어줘', language: 'ko' });
+  const result = await next;
+  assert.equal(result.title, '밤편지');
+  assert.deepEqual(transcripts, ['아이유의 밤편지 틀어줘']);
+  assert.equal(f.workers.length, 1);
+  f.probe.dispose();
 });
 
 test('blob size, decoded duration/channel bounds, and decoder errors are validated before inference', async () => {

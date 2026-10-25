@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r30`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r31`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,26 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r31 repeated preparation / 반복 준비 대기
+
+The r30 capture gate required both microphone and model readiness, so cached model initialization still prevented an otherwise prepared microphone from recording. r31 allows recording as soon as the microphone/recorder is ready; model initialization can overlap the user's utterance, and any remaining wait is after release. This reduces the wait before speaking without claiming that computation itself has disappeared. Stage labels distinguish microphone setup, current-file loading, recognizer initialization and transcription, with elapsed seconds. A file progress percentage is not an overall model percentage or estimated time remaining.
+
+r30은 마이크와 녹음기가 준비돼 있어도 모델 초기화가 끝날 때까지 녹음을 막았습니다. r31은 마이크가 준비되면 모델 준비와 동시에 녹음할 수 있게 하며, 남은 준비는 놓은 뒤 기다립니다. 말하기 전 대기를 줄이는 변경이며 초기화 계산 자체가 사라지는 것은 아닙니다. 마이크 연결·현재 파일 불러오기·인식기 실행 준비·문장 인식과 경과 시간을 구분합니다.
+
+Main-player cancellation previously terminated the model worker when a request was loading/transcribing. r31 cancels the caller and suppresses its result while retaining model loading or allowing an already running inference to finish. A new transcription joins that background work without overlapping inference; if the cancelled computation still blocks the new request after three seconds, it is terminated and the new request prepares a replacement. The existing 180-second loading and 120-second inference deadlines still bound work. Explicit disposal, crashes and diagnostic default cancellation remain hard termination. No cancelled result can reach Spotify, and no voice recording or transcript is persisted. Reopening the page still initializes a new worker.
+
+취소할 때 모델까지 폐기하던 경로를 바꿔, 재생 화면에서는 취소 결과만 버리고 모델을 재사용합니다. 다음 요청이 이전 계산 때문에 기다리면 최대 3초 후 새 Worker로 교체하며, 기존 로딩·인식 제한 시간도 유지합니다. 진단의 강제 취소·실행 오류·명시적 종료는 그대로 정리합니다. 취소 결과는 Spotify에 보내지 않고 녹음·문장은 영구 저장하지 않습니다. 페이지를 새로 열 때의 초기화는 여전히 필요합니다.
+
+Actual-model desktop comparison used the same cached Whisper model and a 2.509-second Korean sample. With a 2.509-second gap after cancellation to represent speaking the next request, its post-release processing took 4.309 seconds after hard termination versus 2.612 seconds with model retention; model initialization count fell from two to one. Immediate resubmission was slower with retention: 3.661 versus 5.493 seconds, including 2.487 seconds draining the old inference. Neither retention case reached the three-second restart threshold. No model network request or POST occurred, and recognized output matched between variants. These are individual desktop comparisons, not r1 performance measurements or an accuracy improvement.
+
+같은 캐시와 실제 모델을 사용한 PC 비교에서, 취소 후 다음 발화 길이(2.509초)만큼 기다렸을 때 새 요청 처리는 4.309초에서 2.612초로 줄었습니다. 모델 초기화는 2회에서 1회로 줄었습니다. 반대로 즉시 재요청은 이전 계산 대기 때문에 3.661초에서 5.493초로 늘었습니다. 두 경우 모두 3초 재시작 조건은 발동하지 않았고, 모델 재다운로드·POST 요청은 없었습니다. PC의 개별 비교이며 r1 실기 속도나 인식 정확도 향상을 증명하지 않습니다.
+
+The existing inference configuration remains unchanged: three cached desktop runs of graph optimization `all` versus `basic` averaged 1,345/1,174 ms initialization and 2,541/2,678 ms inference. Faster initialization was offset by slower inference; these results do not justify switching the default.
+
+After rebuilding, all 189 repository Node tests passed. New regression cases cover cancellation during loading, decoding and inference; stale-result suppression; a single queued recording; the three-second drain restart; worker failure recovery; disposal; hard cancellation without a late worker restart; and the actual player-transcriber abort integration.
+
+Controlled browser checks passed in Korean and English at 240×282 and 240×240. They cover recording before model readiness, release-time waiting, preserving a load when closing, ignoring cancelled inference, recording while an old inference drains, explicit physical-button retry after model failure, repeated holds, permission retry and lifecycle cleanup. Each locale produced three mock playbacks, zero audio uploads and no page errors. Updated screenshots were inspected. The Site-specific seven Worker tests also passed. These browser checks simulate hardware events and services; they do not validate Rabbit firmware timing or real Spotify playback.
 
 ## r30 startup preparation / 앱 시작 시 준비
 
@@ -115,7 +135,7 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
-For the main player, open `?v=20261025-r30` and leave the physical button released while the app prepares. Allow microphone access if requested, or tap the retry control once after a rejected attempt. After voice is ready, make three hold/speak/release requests; then leave and return to check automatic preparation without holding. Record app preparation, hold-to-recording and post-release recognition delays separately. / 재생 화면 r30에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. 준비 완료 후 세 번 누르고 말한 뒤 놓습니다. 앱에 돌아왔을 때도 버튼을 누르지 않고 다시 준비되는지 확인합니다. 앱 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다.
+For the main player, open `?v=20261025-r31` and leave the physical button released while the microphone prepares. Allow access if requested, or tap the retry control once after a rejected attempt. At “Ready to record,” make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. / 재생 화면 r31에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘녹음 가능’이 뜨면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 버튼을 누르지 않고 다시 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다.
 
 The separate diagnostic flow remains:
 
@@ -138,9 +158,9 @@ A successful transcript establishes only the tested device/language/request. Con
 - [whisper.cpp browser example](https://github.com/ggml-org/whisper.cpp/tree/master/examples/whisper.wasm): considered, not implemented. Its default build uses pthreads and needs a different integration/build configuration.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): considered, not implemented. It can run without a paid AI API key but requires a Python host/PC/server; that is an additional dependency for this Creation.
 
-The main player prepares the model, microphone and paused recorder automatically before a hold. Once voice is ready, hold, speak and release (60-second stuck-button ceiling); the user does not hold during preparation. The separate diagnostic page retains an explicit preparation control for isolating model loading.
+The main player prepares the model, microphone and paused recorder automatically before a hold. Once the microphone is ready, hold, speak and release (60-second stuck-button ceiling), even if the model is still preparing. The user does not hold during microphone preparation. The separate diagnostic page retains an explicit preparation control for isolating model loading.
 
-재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 준비 동안 버튼을 누를 필요가 없으며, 음성 준비 완료 후 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
+재생 화면에서는 모델·마이크·일시정지된 녹음기를 미리 준비합니다. 마이크 준비 동안 버튼을 누를 필요가 없으며, ‘녹음 가능’이 뜨면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
 
 The retained Gemini module is a developer-only legacy option. The r25 default player does not call `/api/voice/config` or `/api/voice/search`; merely setting Gemini secrets does not select it.
 
