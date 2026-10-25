@@ -4,7 +4,8 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   for (const locale of ['ko-KR', 'en-US']) {
     const context = await browser.newContext({ locale, viewport: { width: 240, height: 282 } });
-    const errors = [], playback = [], uploads = [];
+    const errors = [], playback = [], uploads = [], searches = [];
+    let bridgeImports = 0;
     let exact = true;
     const uri = 'spotify:track:' + 'a'.repeat(22);
     const track = { uri, id: 'a'.repeat(22), name: '밤편지', type: 'track', duration_ms: 180000,
@@ -15,13 +16,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
         sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ access_token: 'fake-access', refresh_token: 'fake-refresh', clientId: 'a'.repeat(32), expiresAt: Date.now() + 3600000 }));
         window.micCalls = 0; window.micStops = 0; window.modelLoads = 0; window.modelCancels = 0;
         window.rabbitTexts = []; window.modelError = false; window.delayTranscription = false;
-        window.PluginMessageHandler = { postMessage(value) {
-          const request = JSON.parse(value);
-          if (!request.useLLM) return;
-          const payload = JSON.parse(request.message.split('Request: ')[1]);
-          window.rabbitTexts.push(payload.text);
-          queueMicrotask(() => window.onPluginMessage?.({ requestId: payload.requestId, artist: '아이유', title: '밤편지', language: 'ko' }));
-        } };
+        // No Rabbit text bridge is present: both clear and loose commands must work.
         Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
           window.micCalls++; return { getTracks: () => [{ stop() { window.micStops++; } }] };
         } } });
@@ -32,6 +27,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
           stop() { this.state = 'inactive'; queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['fake-audio'], { type: this.mimeType }) }); this.onstop?.(); }); }
         };
       });
+      await context.route('**/rabbit-probe.mjs?*', route => { bridgeImports++; return route.abort(); });
       await context.route('**/api/voice/**', route => { uploads.push(route.request().url()); return route.fulfill({ status: 500, json: { error: 'unexpected_paid_route' } }); });
       await context.route('**/local-speech.mjs?*', route => route.fulfill({ contentType: 'text/javascript', body: `
         export class LocalSpeechProbe {
@@ -49,14 +45,14 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
             this.options.onState({ state: 'transcribing' });
             if (window.modelError) throw Object.assign(new Error('runtime detail'), { code: 'local_transcription_timeout' });
             if (window.delayTranscription) await new Promise(resolve => { window.finishTranscription = resolve; });
-            return { transcript: '아이유의 밤편지 틀어줘', lang: 'ko' };
+            return { transcript: window.testTranscript || '아이유의 밤편지 틀어줘', lang: 'ko' };
           }
           cancel() { window.modelCancels++; } dispose() {}
         }
       ` }));
       await context.route('https://api.spotify.com/**', route => {
         const request = route.request(), url = new URL(request.url());
-        if (url.pathname === '/v1/search') return route.fulfill({ json: { tracks: { items: exact ? [track] : [track, { ...track, uri: 'spotify:track:' + 'b'.repeat(22) }] } } });
+        if (url.pathname === '/v1/search') { searches.push(url.searchParams.get('q')); return route.fulfill({ json: { tracks: { items: exact ? [track] : [track, { ...track, uri: 'spotify:track:' + 'b'.repeat(22) }] } } }); }
         if (request.method() !== 'GET') { playback.push({ url: url.pathname, body: request.postDataJSON() }); return route.fulfill({ status: 204, body: '' }); }
         return route.fulfill({ json: state });
       });
@@ -130,13 +126,22 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.mouse.up();
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
       check(playback.length === 3, 'On-screen hold/release failed');
+      await tab.locator('#voice-cancel').click();
+      await tab.evaluate(() => { window.testTranscript = '아이유 밤편지 틀어줘'; window.dispatchEvent(new Event('longPressStart')); });
+      await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
+      await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+      await tab.locator('#voice-panel[data-phase="choosing"]').waitFor();
+      check(searches.at(-1) === '아이유 밤편지', 'Loose speech did not become a direct Spotify query');
+      check(playback.length === 3, 'Loose speech played without a choice');
+      check(bridgeImports === 0 && await tab.evaluate(() => typeof window.PluginMessageHandler === 'undefined'), 'Player still depends on Rabbit text bridge');
+      await tab.locator('#voice-cancel').click();
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Leaving page leaked microphone');
       check(uploads.length === 0 && playback.length === 3, 'Leaving page submitted voice');
       check(errors.length === 0, 'Browser errors: ' + errors.join('; '));
-      reports.push({ locale, playback: playback.length, uploads: uploads.length, modelLoads: await tab.evaluate(() => window.modelLoads), errors });
+      reports.push({ locale, playback: playback.length, uploads: uploads.length, modelLoads: await tab.evaluate(() => window.modelLoads), bridgeImports, looseQuery: true, errors });
     } finally { await context.close(); }
   }
   return reports;

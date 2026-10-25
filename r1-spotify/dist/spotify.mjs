@@ -1,4 +1,4 @@
-import { rankSongCandidates } from './song-request.mjs';
+import { rankSongCandidates } from './song-request.mjs?v=20261025-r27';
 
 // Only the non-secret device choice is persisted for shared-device sessions.
 const MODE_KEY = 'r1_spotify_device_mode';
@@ -258,14 +258,18 @@ export class SpotifyClient {
     if (!response.ok) throw new Error('Spotify 요청에 실패했습니다. 연결 상태를 확인해 주세요.');
     return body;
   }
-  async searchTracks({ title, artist = '', signal } = {}) {
-    if (typeof title !== 'string' || !title.trim() || title.length > 300 || typeof artist !== 'string' || artist.length > 300) {
+  async searchTracks({ title, artist = '', query, signal } = {}) {
+    const freeText = query !== undefined;
+    if ((!freeText && (typeof title !== 'string' || !title.trim())) ||
+        (title !== undefined && (typeof title !== 'string' || title.length > 300)) ||
+        (freeText && (typeof query !== 'string' || !query.trim() || query.length > 300)) ||
+        typeof artist !== 'string' || artist.length > 300) {
       throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
     }
     const clean = value => value.replace(/["\\\x00-\x1f]/g, ' ').replace(/\s+/g, ' ').trim();
-    const trackName = clean(title), artistName = clean(artist);
-    if (!trackName) throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
-    const query = 'track:"' + trackName + '"' + (artistName ? ' artist:"' + artistName + '"' : '');
+    const trackName = clean(title || ''), artistName = clean(artist), searchText = freeText ? clean(query) : '';
+    if (freeText ? !searchText : !trackName) throw new Error('곡 제목과 가수 이름을 확인해 주세요.');
+    const filteredQuery = 'track:"' + trackName + '"' + (artistName ? ' artist:"' + artistName + '"' : '');
     const search = async (q, limit = 5) => {
       const result = await this.request('/search?' + new URLSearchParams({ q, type: 'track', limit: String(limit) }), { signal });
       const seen = new Set();
@@ -275,7 +279,9 @@ export class SpotifyClient {
         seen.add(track.uri); return true;
       }).slice(0, limit);
     };
-    const matches = await search(query);
+    // Unstructured speech is a broad search, never a claim of an exact title.
+    if (freeText) return (await search(searchText)).map(track => ({ ...track, voiceRecovery: true }));
+    const matches = await search(filteredQuery);
     // Broader candidates can be chosen by the user; they are never assumed to be an exact match.
     if (matches.length) return matches;
     const broad = await search([trackName, artistName].filter(Boolean).join(' '));

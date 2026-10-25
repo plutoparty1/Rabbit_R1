@@ -1,12 +1,11 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r26';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r26';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r26';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r26';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r26';
-import { RabbitProbe } from './rabbit-probe.mjs?v=20261025-r26';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r27';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r27';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r27';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r27';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r27';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r26';
+import { setupPairing } from './pair-device.mjs?v=20261025-r27';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -346,13 +345,12 @@ const localSpeech = new LocalSpeechProbe({ onState(event) {
     renderVoiceModel();
   }
 } });
-const rabbitVoice = new RabbitProbe();
-voiceController = new VoiceController({ client, onChange: renderVoice, transcriber: createKeylessTranscriber(localSpeech, rabbitVoice),
+voiceController = new VoiceController({ client, onChange: renderVoice, transcriber: createKeylessTranscriber(localSpeech),
   canStart: () => startupReady && client.connected && !busy && !document.hidden && !suspended && ['player', 'lyrics'].includes(screen),
   deviceId: () => player.deviceId || undefined,
 });
 function prepareVoiceModel(retry = false) {
-  if (!client.connected || document.hidden || suspended || !localSpeech.supported || !rabbitVoice.supported || localSpeech.ready) return;
+  if (!client.connected || document.hidden || suspended || !localSpeech.supported || localSpeech.ready) return;
   if (voiceModelPromise) return voiceModelPromise;
   if (voiceModelError && !retry) return;
   voiceModelLoading = true; voiceModelError = ''; renderVoiceModel();

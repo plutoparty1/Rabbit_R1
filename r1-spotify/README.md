@@ -21,7 +21,7 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 | Capability | What you get |
 | --- | --- |
 | Hardware-first control | Side-button play/pause; wheel volume in 5% steps; artwork swipe for previous/next |
-| Multilingual voice requests | On-device Whisper recognition → Rabbit text AI → Spotify search; no AI API key or running companion PC; r1 inference still needs testing |
+| Multilingual voice requests | On-device Whisper recognition → local request parsing → Spotify search; no AI API key or running companion PC; r1 inference still needs testing |
 | Focused lyrics | Tap artwork to open lyrics; scroll with the wheel; follow the current line when timestamps exist |
 | Multiple lyric sources | Bugs first, then LRCLIB exact/search and lyrics.ovh fallback |
 | Session recovery | PKCE login, token refresh and on-device session restoration |
@@ -135,7 +135,7 @@ Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls
 
 ### Test on r1 without an API key
 
-The r26 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet; later reuse depends on the WebView's cache. This is browser-based local inference, not access to Rabbit's native speech recognizer.
+The r27 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet; later reuse depends on the WebView's cache. This is browser-based local inference, not access to Rabbit's native speech recognizer.
 
 Open the [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html?v=20261025-r26-test) from **Test rabbit voice without an API key** in the Creation's connection settings. It needs **no Spotify login**. Check the `20261025-r26-test` label, then:
 
@@ -152,13 +152,13 @@ The user reported Rabbit AI connection success, a Web Speech timeout and a 20,26
 
 1. Sign in to Spotify and start playback on another device with the same account. The player automatically prepares the voice model in the background.
 2. **Hold the side button on the player, speak, and release.** Recording starts without a separate preparation step. If the first download is still running, only analysis waits after recording; the on-screen recording button also works.
-3. Local Whisper detects the language and transcribes. Explicit patterns such as ‘play title by artist’ are parsed immediately; other phrasing uses Rabbit text AI. Spotify plays a unique exact title-and-artist match. Uncertain parsing and artist-catalog recovery require choosing a candidate.
+3. Local Whisper detects the language and transcribes. Explicit patterns such as ‘play title by artist’ are parsed immediately; other phrasing becomes a conservative Spotify text query, with obvious play-command words removed. Rabbit AI is not called by the player. Spotify plays a unique exact title-and-artist match. Unstructured text searches, uncertain parsing and artist-catalog recovery require choosing a candidate.
 
-r26 reuses the audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
+r27 retains r26’s shared audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
 
-Try **“아이유의 밤편지 틀어줘”** or **“Play Yesterday by The Beatles.”** The model is instructed to transcribe rather than translate. Small models can mishear names, short utterances and mixed-language requests; inspect the displayed text and candidates. Recording ends on release. The former 15-second limit is replaced by a 60-second/2 MiB safety ceiling for a stuck button. Cancel, hide/page exit, screen changes or disconnect invalidate pending work. A dispatched Rabbit server request cannot be recalled.
+Try **“아이유의 밤편지 틀어줘”** or **“Play Yesterday by The Beatles.”** The model is instructed to transcribe rather than translate. Small models can mishear names, short utterances and mixed-language requests; inspect the displayed text and candidates. Recording ends on release. The former 15-second limit is replaced by a 60-second/2 MiB safety ceiling for a stuck button. Cancel, hide/page exit, screen changes or disconnect invalidate pending work.
 
-Spotify Client ID, login, Premium and an active playback device are still required for playback. No Gemini secret or server voice allowlist is required by this default flow. If an older login lacks search permission, reconnect once to grant `user-read-private`; refreshing a token cannot add permissions. See [Spotify's scopes](https://developer.spotify.com/documentation/web-api/concepts/scopes). Button events and the [Rabbit text bridge](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) require the open Creation; ordinary browsers may not provide the bridge. Music continues on the Spotify playback device.
+Spotify Client ID, login, Premium and an active playback device are still required for playback. No Gemini secret or server voice allowlist is required by this default flow. If an older login lacks search permission, reconnect once to grant `user-read-private`; refreshing a token cannot add permissions. See [Spotify's scopes](https://developer.spotify.com/documentation/web-api/concepts/scopes). The [physical-button events](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md#hardware-button-events) require the open Creation; on-screen voice capture does not require Rabbit's text bridge. Music continues on the Spotify playback device.
 
 | Error code | Action |
 | --- | --- |
@@ -173,7 +173,7 @@ Implementation: [Transformers.js](https://huggingface.co/docs/transformers.js/v3
 
 ![Device, Spotify playback and lyrics data flow](docs/assets/architecture.svg)
 
-The browser calls Spotify directly for authentication, search and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. Default voice requests use local Whisper and parse clear command patterns on-device; only other wording goes to Rabbit text AI for artist/title extraction. The retained Gemini server endpoint is an optional developer integration and is not called by the default player. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
+The browser calls Spotify directly for authentication, search and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. Default voice requests use local Whisper and local request parsing, then search Spotify directly. The retained Gemini server endpoint is an optional developer integration and is not called by the default player. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
 
 ### Lyrics lookup
 
@@ -218,7 +218,7 @@ The local address is for development. Use your deployed HTTPS URL for r1 install
 
 ### Optional legacy Gemini backend — developers only
 
-The server speech module remains for developers who deliberately integrate it in a fork. **The r26 default player uses local Whisper and does not call `/api/voice/config` or `/api/voice/search`. Setting these secrets alone does not switch the player back to Gemini.** No settings below are needed for the default flow. A custom caller must use the authenticated `POST /api/voice/search` contract and disclose the audio upload. Keep the existing Sites hosting when updating the public instance; Wrangler instructions apply only to an independently hosted fork.
+The server speech module remains for developers who deliberately integrate it in a fork. **The r27 default player uses local Whisper and does not call `/api/voice/config` or `/api/voice/search`. Setting these secrets alone does not switch the player back to Gemini.** No settings below are needed for the default flow. A custom caller must use the authenticated `POST /api/voice/search` contract and disclose the audio upload. Keep the existing Sites hosting when updating the public instance; Wrangler instructions apply only to an independently hosted fork.
 
 | Server setting | Purpose |
 | --- | --- |
@@ -254,7 +254,7 @@ The hosted app controls playback using each user's own Client ID and Spotify log
 | Phone setup relay | Public Client ID, receiver-proof hash and expiry temporarily in Sites storage; no Spotify credentials. Received/cancelled sessions are deleted. Expired sessions cannot be used and abandoned records are pruned during new-session creation. |
 | Bugs request | Track title, artist, album and duration only; no Spotify token |
 | Other lyrics requests | Track metadata sent to the selected provider; no Spotify credentials |
-| Default voice request | Audio is decoded and transcribed on the device, without an audio upload. The transcript is sent to Rabbit text AI and extracted artist/title to Spotify. The app does not persist or log recordings/transcripts; it requests neither Rabbit spoken output nor journal logging |
+| Default voice request | Audio is decoded and transcribed on the device, without an audio upload. The extracted artist/title or a cleaned text query is sent to Spotify. No Rabbit AI request is made by the player. The app does not persist or log recordings/transcripts |
 | Model/runtime downloads | Public files from jsDelivr and Hugging Face; no AI API key. Browser caching may retain model files; it does not store recordings |
 | Optional legacy Gemini caller | If a developer explicitly integrates it, audio goes to the site server and Gemini; Spotify credentials do not go to Gemini. Provider processing/retention follows the operator's service settings and terms |
 
@@ -278,7 +278,7 @@ Disconnect removes saved credentials and records a logout marker to block restor
 | Old or cropped UI after returning | Check the displayed version and viewport in diagnostics; compare deployment assets with source |
 | Voice model not ready / download failed | Preparation starts automatically in the player; retry after a failure and check internet access. First download/reloading can still require preparation time |
 | Recognition times out on r1 | Use local Whisper, try a short 3–5 second phrase and share the stage/error code; r1 local inference performance is not yet established |
-| Rabbit AI unavailable | Open the app as a Rabbit Creation; the text bridge may be absent in an ordinary browser |
+| Rabbit AI unavailable | The player no longer depends on Rabbit AI. Only the separate diagnostic text-analysis test uses that bridge |
 | Existing login needs search permission | Reconnect and sign in once to grant `user-read-private`; token refresh alone does not add this permission |
 | Microphone denied or unsupported | Allow microphone access and use an HTTPS URL; check the current r1 WebView's recording support |
 | Voice request finds the wrong song or multiple songs | Say both artist and title clearly, then inspect the candidate list; proper names and language detection can be misrecognized |
@@ -325,7 +325,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; r1 recording decode, local Whisper speed/accuracy and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r26`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r27`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

@@ -24,6 +24,23 @@ export function parseSongRequest(value) {
   return { artist, title, requiresConfirmation: !command };
 }
 
+// When an artist/title boundary is unclear, search the recognized words as-is.
+// Remove only an explicit request at the edge; never invent missing names.
+export function createSongSearchRequest(value) {
+  if (typeof value !== 'string' || value.length > 500 || /[\u0000-\u001f\u007f]/.test(value)) return null;
+  let query = clean(value).replace(endPunctuation, '').trim();
+  const korean = koreanCommand.exec(query);
+  const japanese = /^(.*?)(?:を)?(?:再生して(?:ください)?|かけて(?:ください)?)$/u.exec(query);
+  if (korean) query = korean[1].trim();
+  else if (japanese) query = japanese[1].trim();
+  else if (/^(?:please\s+)?play(?:\s|$)/iu.test(query)) {
+    query = query.replace(/^(?:please\s+)?play(?:\s+|$)/iu, '')
+      .replace(/,?\s+please$/iu, '').trim();
+  }
+  if (!query || query.length > 300) return null;
+  return { title: query, artist: '', query, requiresConfirmation: true };
+}
+
 const comparison = value => String(value || '').normalize('NFKC').toLowerCase().replace(/[\p{P}\p{Z}\s]/gu, '').slice(0, 200);
 function substitution(left, right) {
   if (left === right) return 0;

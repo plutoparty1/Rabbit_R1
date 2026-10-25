@@ -1,10 +1,10 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r26`; diagnostics: `20261025-r26-test`. Desktop timing rows below are historical r25 measurements.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r27`; diagnostics: `20261025-r26-test`. Desktop timing rows below are historical r25 measurements.
 
-The default flow is microphone → on-device Whisper → local command parsing (Rabbit text AI for other wording) → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download, Rabbit text analysis and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
+The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
-기본 경로는 마이크 → 기기 내 Whisper → 기기 내 명령 해석(다른 표현은 래빗 텍스트 AI) → Spotify 검색·재생입니다. AI API 키나 켜 둔 PC가 필요하지 않습니다. 최초 공개 모델·실행 파일 다운로드, 래빗 텍스트 분석, Spotify 동작에는 인터넷이 필요합니다. 래빗 기본 음성 인식기에 직접 연결하는 구현은 아닙니다.
+기본 경로는 마이크 → 기기 내 Whisper → 기기 내 명령 해석 / 일반 문장 검색 → Spotify 검색·재생입니다. AI API 키나 켜 둔 PC가 필요하지 않습니다. 최초 공개 모델·실행 파일 다운로드와 Spotify 동작에는 인터넷이 필요합니다. 래빗 기본 음성 인식기에 직접 연결하는 구현은 아닙니다.
 
 ## Evidence and limits / 근거와 한계
 
@@ -25,6 +25,14 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r27 direct search / 직접 검색
+
+Validation: **151 automated tests passed**. Korean and English browser checks passed with no Rabbit bridge available, no Rabbit module import and no audio upload. The unstructured phrase “아이유 밤편지 틀어줘” becomes the Spotify query “아이유 밤편지”; mocked candidates require a selection. Physical button event handlers are unchanged. Real r1 recognition accuracy and live Spotify search results still require the device trial.
+
+The user reported that the physical side button opened the voice panel without recording, then confirmed it worked again. Hardware event handlers are preserved; no firmware cause was established. A separate spoken request failed at Rabbit song parsing. r27 removes that dependency from the default player: explicit commands use structured search; other nonempty speech becomes a cleaned Spotify query and always requires candidate selection. The diagnostic page retains its separate Rabbit test. Raw transcription accuracy is unchanged.
+
+사용자는 우측 물리 버튼이 음성 창만 열던 현상이 재시도 후 정상 동작한다고 확인했습니다. 물리 버튼 이벤트는 유지하며 펌웨어 원인을 확정하지 않았습니다. 남은 곡 분석 오류는 기본 재생 화면에서 래빗 AI 의존성을 제거해 처리합니다. 형식이 명확하지 않은 문장도 Spotify에서 검색하고 후보 선택을 기다립니다. 음성 받아쓰기 정확도 자체는 바뀌지 않았습니다.
 
 ## r26 changes / 변경 사항
 
@@ -55,9 +63,9 @@ Transformers.js 3.8.1 defaults to English if language is omitted. The worker the
 
 Transformers.js 3.8.1은 언어를 생략하면 영어를 사용합니다. 따라서 Worker가 Whisper의 언어 토큰 분류를 직접 수행합니다. 진단에서 한국어 등 언어를 지정하면 이 추가 단계를 건너뜁니다. 짧거나 여러 언어가 섞인 발화에서는 언어 판단도 틀릴 수 있습니다.
 
-Model files may be reused from the WebView cache; cache persistence is not guaranteed. Recordings/transcripts are not persisted by this implementation. In the player, clear command patterns stay in the local parser; other recognized transcripts go to Rabbit's documented text bridge for artist/title extraction. Diagnostics send it only after pressing ③. Spotify login and the user's Client ID are needed for playback, but not for the diagnostic page.
+Model files may be reused from the WebView cache; cache persistence is not guaranteed. Recordings/transcripts are not persisted by this implementation. In the player, all recognized requests are handled locally and sent to Spotify as artist/title or a cleaned text query; Rabbit AI is not called. Diagnostics send it only after pressing ③. Spotify login and the user's Client ID are needed for playback, but not for the diagnostic page.
 
-모델 캐시 유지 여부는 WebView에 달려 있습니다. 구현은 녹음·인식 문장을 영구 저장하지 않습니다. 재생 화면에서는 명확한 명령 형식을 기기에서 처리하고 그 밖의 인식 문장만 공식 래빗 텍스트 채널에 보내 가수·곡명을 추출합니다. 진단에서는 ③을 누를 때만 보냅니다. 재생에는 Spotify 로그인·본인의 Client ID가 필요하며 진단에는 필요하지 않습니다.
+모델 캐시 유지 여부는 WebView에 달려 있습니다. 구현은 녹음·인식 문장을 영구 저장하지 않습니다. 재생 화면에서는 모든 인식 요청을 기기에서 처리하고 가수·곡명 또는 정리한 검색 문장으로 Spotify에 보냅니다. 래빗 AI는 호출하지 않습니다. 진단에서는 ③을 누를 때만 보냅니다. 재생에는 Spotify 로그인·본인의 Client ID가 필요하며 진단에는 필요하지 않습니다.
 
 ## Next r1 trial / 다음 실기 시험
 

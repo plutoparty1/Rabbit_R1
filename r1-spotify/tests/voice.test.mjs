@@ -182,11 +182,13 @@ test('clear keyless commands parse locally without a Rabbit round trip or paid r
   assert.equal(f.controller.state.language, 'ko');
 });
 
-test('keyless route checks Rabbit bridge before microphone capture', async () => {
-  const f = keylessFixture({ rabbit: { supported: false } }); await f.controller.begin();
-  assert.equal(f.controller.state.phase, 'error'); assert.equal(f.captures(), 0);
-  assert.equal(f.calls.length, 0); assert.equal(f.timers.size, 0);
-  assert.equal(f.localCalls.length, 0); assert.match(f.controller.state.message, /Creation/);
+test('keyless capture and search work without a Rabbit bridge', async () => {
+  const f = keylessFixture({ rabbit: { supported: false, request() { throw Error('Rabbit must not be called'); } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'done'); assert.equal(f.captures(), 1);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+  assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
+  assert.equal(f.timers.size, 0);
 });
 
 test('cold first hold records immediately while model loads, then processes after release', async () => {
@@ -248,17 +250,21 @@ test('cancel during local transcription rejects a late result before calling Rab
   f.controller.cancel(); result.resolve({ transcript: 'late', lang: 'en' }); await tick(); await tick();
   assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
   assert.ok(f.localCalls.some(call => call[0] === 'cancel-local'));
-  assert.ok(f.localCalls.some(call => call[0] === 'cancel-rabbit'));
+  assert.equal(f.localCalls.some(call => call[0] === 'cancel-rabbit'), false);
   assert.equal(f.calls.length, 0); assert.equal(f.controller.state.phase, 'idle');
 });
 
-test('cancel during Rabbit analysis prevents later Spotify search and playback', async () => {
+test('cancelling an unstructured local search suppresses late candidates and playback', async () => {
   const result = deferred();
-  const f = keylessFixture({ recognizer: { async transcribeBlob() { return { transcript: '어제 얘기한 곡을 찾아 주세요', lang: 'ko' }; } }, rabbit: { request: () => result.promise } });
+  const f = keylessFixture({
+    recognizer: { async transcribeBlob() { return { transcript: '아이유 밤편지 틀어줘', lang: 'ko' }; } },
+    fixture: { client: { async searchTracks(request) { assert.equal(request.query, '아이유 밤편지'); return result.promise; } } },
+  });
   await f.controller.begin(); f.controller.release(); await tick(); await tick();
-  assert.equal(f.controller.state.phase, 'analyzing');
-  f.controller.cancel(); result.resolve({ artist: '아이유', title: '밤편지' }); await tick();
+  assert.equal(f.controller.state.phase, 'searching');
+  f.controller.cancel(); result.resolve([song()]); await tick();
   assert.equal(f.calls.length, 0); assert.equal(f.controller.state.phase, 'idle');
+  assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
 });
 
 test('local model failure is actionable and never falls back to paid transcription', async () => {
@@ -268,12 +274,18 @@ test('local model failure is actionable and never falls back to paid transcripti
   assert.equal(f.calls.length, 0); assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
 });
 
-test('unstructured commands send only recognized text to Rabbit as a fallback', async () => {
-  const f = keylessFixture({ recognizer: { async transcribeBlob() { return { transcript: '어제 얘기한 곡을 찾아 주세요', lang: 'ko' }; } } });
+test('unstructured speech searches Spotify directly and requires a choice without Rabbit or paid requests', async () => {
+  const f = keylessFixture({ recognizer: { async transcribeBlob() { return { transcript: '아이유 밤편지 틀어줘', lang: 'ko' }; } }, rabbit: { supported: false, request() { throw Error('Rabbit must not be called'); } } });
   await submit(f);
-  assert.deepEqual(f.localCalls.find(call => call[0] === 'text'), ['text', '어제 얘기한 곡을 찾아 주세요']);
-  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
+  const request = f.calls.find(call => call[0] === 'search')[1];
+  assert.equal(request.query, '아이유 밤편지');
+  assert.equal(request.artist, '');
+  assert.equal(f.controller.state.phase, 'choosing');
+  assert.equal(f.calls.some(call => call[0] === 'play'), false);
   assert.equal(f.calls.some(call => call === 'token' || call[0]?.startsWith('/api/voice')), false);
+  await f.controller.choose(song().uri);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
 });
 
 test('uncertain parsed requests require a choice even with one exact Spotify result', async () => {
@@ -291,4 +303,13 @@ test('artist recovery results never autoplay even if one title and artist happen
   assert.equal(f.calls.some(call => call[0] === 'play'), false);
   await f.controller.choose(song().uri);
   assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+});
+
+test('invalid local recognition responses do not report a Rabbit AI failure', async () => {
+  const f = keylessFixture({ recognizer: { async transcribeBlob() { throw Object.assign(new Error('invalid_response'), { code: 'invalid_response' }); } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'error');
+  assert.match(f.controller.state.message, /녹음/);
+  assert.doesNotMatch(f.controller.state.message, /래빗 AI/);
+  assert.equal(f.calls.length, 0);
 });

@@ -38,6 +38,46 @@ test('empty filtered search offers broad candidates without issuing playback', a
   assert.ok(calls.every(call => call.options.method === 'GET'));
 });
 
+test('unstructured speech makes one broad query and only offers selectable filtered candidates', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return json({ tracks: { items: [track, track, { ...track, uri: 'spotify:episode:bad' },
+      { ...track, uri: 'spotify:track:' + 'b'.repeat(22), is_playable: false }] } });
+  });
+  const results = await client.searchTracks({ query: '아이유 "밤편지"' });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.searchParams.get('q'), '아이유 밤편지');
+  assert.equal(calls[0].url.searchParams.get('limit'), '5');
+  assert.equal(calls[0].url.searchParams.get('type'), 'track');
+  assert.deepEqual(results, [{ ...track, voiceRecovery: true }]);
+  assert.equal(track.voiceRecovery, undefined);
+  assert.equal(calls[0].options.method, 'GET');
+});
+
+test('empty free-text searches stop after one request without guessed artist fallback', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return json({ tracks: { items: [] } }); });
+  assert.deepEqual(await client.searchTracks({ title: 'heard words', artist: 'ignored artist', query: 'heard words' }), []);
+  assert.equal(calls, 1);
+});
+
+test('free-text validation and cancellation prevent requests or late candidates', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return json({ tracks: { items: [track] } }); });
+  for (const input of [{ query: '' }, { query: '   ' }, { query: '"\\' }, { query: null },
+    { query: {} }, { query: 'x'.repeat(301) }, { query: 'song', title: {} }, { query: 'song', artist: {} }]) {
+    await assert.rejects(client.searchTracks(input));
+  }
+  const cancelled = new AbortController(); cancelled.abort();
+  await assert.rejects(client.searchTracks({ query: 'song', signal: cancelled.signal }), { name: 'AbortError' });
+  assert.equal(calls, 0);
+  const duringFetch = new AbortController();
+  client.fetcher = async () => { calls++; duringFetch.abort(); return json({ tracks: { items: [track] } }); };
+  await assert.rejects(client.searchTracks({ query: 'song', signal: duringFetch.signal }), { name: 'AbortError' });
+  assert.equal(calls, 1);
+});
+
 test('garbled title can recover actual artist catalog choices, always marked for confirmation', async () => {
   const calls = [];
   const candidates = ['팔레트', '밤편지 (Live)', '밤편지', '좋은 날'].map((name, index) => ({

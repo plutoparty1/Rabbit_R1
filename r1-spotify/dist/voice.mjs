@@ -1,4 +1,4 @@
-import { parseSongRequest } from './song-request.mjs?v=20261025-r26';
+import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r27';
 
 // One push-to-talk session owns every recorder, stream and asynchronous result.
 // Safety stop for a missing button-release event, not a normal speaking deadline.
@@ -26,24 +26,21 @@ export function keylessVoiceMessage(error) {
   if (['model_load_failed', 'local_model_timeout', 'local_worker_failed'].includes(code)) return '음성 모델을 준비하지 못했습니다. Wi-Fi를 확인하고 다시 시도해 주세요.';
   if (code === 'local_not_ready') return '음성 기능을 준비하고 있습니다. 녹음 후 자동으로 처리합니다.';
   if (code === 'local_transcription_timeout') return '이 기기의 음성 처리 시간이 초과되었습니다. 잠시 후 다시 시도해 주세요.';
-  if (['decode_failed', 'invalid_audio', 'empty_audio', 'transcription_failed', 'no_speech'].includes(code)) return '녹음에서 말을 인식하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
+  if (['decode_failed', 'invalid_audio', 'empty_audio', 'transcription_failed', 'no_speech', 'invalid_response', 'invalid_text'].includes(code)) return '녹음에서 말을 인식하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
   if (['audio_too_large', 'audio_too_long'].includes(code)) return '녹음이 너무 깁니다. 가수와 곡명만 짧게 말해 주세요.';
-  if (['rabbit_no_response', 'rabbit_unmatched_response', 'bridge_failed', 'invalid_response', 'invalid_text'].includes(code)) return '래빗 AI에서 곡 정보를 확인하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
   if (code === 'unsupported') return '이 기기에서 음성 모델을 실행할 수 없습니다. 래빗 Creation에서 다시 열어 주세요.';
   if (code === 'cancelled') return '음성 요청이 취소되었습니다.';
   return '기기 내 음성 인식을 완료하지 못했습니다. 다시 시도해 주세요.';
 }
 
-// Audio remains in LocalSpeechProbe. Only its transcript enters Rabbit's text bridge.
-export function createKeylessTranscriber(recognizer, rabbit) {
+// Audio and command interpretation stay local. Only the search terms go to Spotify.
+export function createKeylessTranscriber(recognizer) {
   const cancelled = () => Object.assign(new Error('cancelled'), { code: 'cancelled' });
-  const cancel = () => { recognizer.cancel(); rabbit.cancel(); };
+  const cancel = () => recognizer.cancel();
   return {
     get ready() { return recognizer.ready; },
-    get supported() { return recognizer.supported && rabbit.supported; },
-    get unavailableMessage() {
-      return !rabbit.supported ? '래빗 Creation에서 음성 검색을 열어 주세요.' : keylessVoiceMessage({ code: 'unsupported' });
-    },
+    get supported() { return recognizer.supported; },
+    get unavailableMessage() { return keylessVoiceMessage({ code: 'unsupported' }); },
     prepare() { return recognizer.prepare(); },
     cancel,
     async recognize(blob, { signal, onTranscript = () => {} } = {}) {
@@ -54,11 +51,13 @@ export function createKeylessTranscriber(recognizer, rabbit) {
         if (signal?.aborted) throw cancelled();
         onTranscript(speech.transcript, speech.lang);
         if (signal?.aborted) throw cancelled();
-        // Common commands do not need a second AI round trip after transcription.
-        const parsed = parseSongRequest(speech.transcript);
-        const song = parsed || await rabbit.request(speech.transcript);
+        // An unfamiliar sentence becomes a conservative catalog search instead
+        // of waiting on Rabbit AI or failing when that text bridge is unavailable.
+        const song = parseSongRequest(speech.transcript) || createSongSearchRequest(speech.transcript);
+        if (!song) throw Object.assign(new Error('invalid_text'), { code: 'invalid_text' });
         if (signal?.aborted) throw cancelled();
-        return { transcript: speech.transcript, language: speech.lang, artist: song.artist, title: song.title, requiresConfirmation: Boolean(song.requiresConfirmation) };
+        return { transcript: speech.transcript, language: speech.lang, artist: song.artist, title: song.title,
+          ...(typeof song.query === 'string' ? { query: song.query } : {}), requiresConfirmation: Boolean(song.requiresConfirmation) };
       } finally { signal?.removeEventListener('abort', cancel); }
     },
   };
@@ -208,7 +207,8 @@ export class VoiceController {
       }
       if (!this.current(session)) return;
       if (typeof result.title !== 'string' || !result.title.trim() || typeof result.transcript !== 'string') throw new Error('곡명을 알아듣지 못했습니다. 가수와 곡명을 다시 말해 주세요.');
-      session.request = { title: result.title.trim(), artist: typeof result.artist === 'string' ? result.artist.trim() : '' };
+      session.request = { title: result.title.trim(), artist: typeof result.artist === 'string' ? result.artist.trim() : '',
+        ...(typeof result.query === 'string' ? { query: result.query } : {}) };
       this.update({ phase: 'searching', message: 'Spotify에서 검색하고 있습니다.', transcript: result.transcript, language: typeof result.language === 'string' ? result.language : '' });
       const rawTracks = await this.client.searchTracks({ ...session.request, signal: session.abort.signal });
       if (!this.current(session)) return;

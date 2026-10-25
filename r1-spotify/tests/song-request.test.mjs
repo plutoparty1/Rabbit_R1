@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSongRequest, rankSongCandidates } from '../dist/song-request.mjs';
+import { parseSongRequest, createSongSearchRequest, rankSongCandidates } from '../dist/song-request.mjs';
 
 test('explicit Korean and English song commands parse locally without changing names', () => {
   assert.deepEqual(parseSongRequest('아이유의 밤편지 틀어줘.'), { artist: '아이유', title: '밤편지', requiresConfirmation: false });
@@ -18,6 +18,28 @@ test('garbled titles remain unchanged and require a user choice', () => {
 test('unsupported or malformed requests fall back to the existing parser', () => {
   for (const text of [null, {}, '', '틀어줘', '무슨 노래 들을까', 'play by', 'x'.repeat(501), '아이유의 밤편지\n틀어줘']) {
     assert.equal(parseSongRequest(text), null);
+  }
+});
+
+test('unstructured requests search recognized words without guessing an artist or correcting a title', () => {
+  for (const [heard, query] of [
+    ['아이유 밤편지 틀어줘.', '아이유 밤편지'],
+    ['아이유 밤편지를 재생해 주세요', '아이유 밤편지'],
+    ['Please play Yesterday, please.', 'Yesterday'],
+    ['夜に駆けるを再生してください', '夜に駆ける'],
+    ['宇多田ヒカル First Loveをかけて', '宇多田ヒカル First Love'],
+    ['IU 편벤지트로저', 'IU 편벤지트로저'],
+    ['Replay by SHINee', 'Replay by SHINee'],
+    ['The Play Song', 'The Play Song'],
+  ]) {
+    assert.deepEqual(createSongSearchRequest(heard), { title: query, artist: '', query, requiresConfirmation: true });
+  }
+});
+
+test('empty commands and malformed search text never become catalog requests', () => {
+  for (const text of [null, {}, '', '   ', '!!!', '틀어줘', '재생해 주세요', 'please play', '再生して',
+    'x'.repeat(301), 'x'.repeat(501), 'artist\nsong', 'song\u0000']) {
+    assert.equal(createSongSearchRequest(text), null, String(text));
   }
 });
 
