@@ -1,10 +1,10 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r22';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r22';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r22';
-import { VoiceController } from './voice.mjs?v=20261025-r22';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r23';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r23';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r23';
+import { VoiceController } from './voice.mjs?v=20261025-r23';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r22';
+import { setupPairing } from './pair-device.mjs?v=20261025-r23';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;

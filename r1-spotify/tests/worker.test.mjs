@@ -5,7 +5,7 @@ import { readFile } from 'node:fs/promises';
 import worker from '../dist/server/index.js';
 
 test('기존 화면과 모듈을 원문 그대로 제공합니다.', async () => {
-  for (const name of ['index.html', 'app.mjs', 'core.mjs', 'spotify.mjs', 'style.css']) {
+  for (const name of ['index.html', 'app.mjs', 'core.mjs', 'spotify.mjs', 'style.css', 'rabbit-test.html', 'rabbit-test.mjs', 'rabbit-test.css', 'rabbit-probe.mjs']) {
     const response = await worker.fetch(new Request('https://app.test/' + name + '?v=test'));
     assert.equal(response.status, 200);
     assert.equal(await response.text(), await readFile(new URL('../dist/' + name, import.meta.url), 'utf8'));

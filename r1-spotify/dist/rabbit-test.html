@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="referrer" content="no-referrer">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>R1 · API 키 없는 실기 테스트</title>
+  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r23-test">
+</head>
+<body>
+  <main>
+    <header><h1>래빗 음성 진단</h1><a href="./">‹ Spotify</a></header>
+    <p class="intro">API 키·Spotify 로그인 없이 테스트</p>
+    <nav class="jump-links" aria-label="테스트 단계로 이동"><a href="#rabbit-title">① AI</a><a href="#speech-title">② 음성</a><a href="#analyze-title">③ 분석</a><a href="#summary-title">결과</a></nav>
+    <p class="notice">①·③: 문장을 래빗 서버로 전송<br>②: 브라우저 음성 서비스를 쓸 수 있음<br>Gemini·Spotify 요청 및 녹음 저장 없음</p>
+
+    <section aria-labelledby="rabbit-title">
+      <h2 id="rabbit-title">① 래빗 AI 연결</h2>
+      <button id="rabbit-text" type="button" class="primary">래빗 AI 연결 확인</button>
+      <p>예문 “아이유의 밤편지 틀어줘”에서 가수·곡명·언어를 추출합니다.</p>
+      <p id="rabbit-status" class="status" role="status">미실행</p>
+      <p id="rabbit-result" class="result" hidden></p>
+    </section>
+
+    <section aria-labelledby="speech-title">
+      <h2 id="speech-title">② 브라우저 음성 인식</h2>
+      <p>아래 버튼이나 래빗 옆 버튼을 누른 채 말하고 놓으세요. 최대 15초입니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
+      <label for="speech-language">인식 언어</label>
+      <select id="speech-language">
+        <option value="">브라우저 기본(자동 감지 보장 안 됨)</option>
+        <option value="ko-KR" selected>한국어</option>
+        <option value="en-US">English</option>
+        <option value="ja-JP">日本語</option>
+      </select>
+      <p id="language-note" class="fine">한국어로 먼저 확인해 주세요. 이 검사는 래빗 기본 음성 인식이나 다국어 자동 감지 지원을 확인하는 검사가 아닙니다.</p>
+      <label for="capture-mode">옆 버튼 · 화면 버튼의 테스트 모드</label>
+      <select id="capture-mode">
+        <option value="speech">음성 → 텍스트</option>
+        <option value="microphone">마이크 녹음만 확인</option>
+      </select>
+      <button id="capture-hold" type="button" class="primary hold" aria-pressed="false">누르고 말하기</button>
+      <p id="speech-status" class="status" role="status">미실행</p>
+      <p id="microphone-status" class="status" role="status" hidden>미실행</p>
+      <label for="transcript">인식 문장 · 이 화면에만 표시</label>
+      <textarea id="transcript" rows="3" readonly placeholder="최종 인식 결과가 여기에 표시됩니다."></textarea>
+      <p id="interim" class="fine" role="status" hidden></p>
+      <details>
+        <summary>마이크만 따로 확인하기</summary>
+        <p>위 모드를 “마이크 녹음만 확인”으로 바꾸고 누른 채 말하세요. 수집한 오디오 바이트 수만 확인하고 즉시 버립니다. 음성이 잘 들리는지, 음성 인식이 되는지까지 증명하지는 않습니다.</p>
+      </details>
+    </section>
+
+    <section aria-labelledby="analyze-title">
+      <h2 id="analyze-title">③ 인식 문장 분석</h2>
+      <p>②의 문장을 확인한 뒤 직접 눌러 래빗 AI로 보냅니다. 옆 버튼을 놓는 것만으로 전송되지 않습니다.</p>
+      <button id="rabbit-analyze" type="button" disabled>인식 문장으로 래빗 AI 분석</button>
+      <p id="analysis-status" class="status" role="status">미실행</p>
+      <p id="analysis-result" class="result" hidden></p>
+    </section>
+
+    <section aria-labelledby="summary-title">
+      <h2 id="summary-title">테스트 결과</h2>
+      <p id="summary" role="status">①과 ②를 먼저 실행해 주세요.</p>
+      <p class="fine">①·②·③ 성공은 API 키 없는 음성 → 래빗 AI 경로가 이 기기에서 동작했다는 뜻입니다. 곡명 정확성은 화면에서 확인해 주세요. 다국어 자동 감지와 Spotify 재생은 별도 확인이 필요합니다.</p>
+      <details open>
+        <summary>기기 기능 · 입력 수신</summary>
+        <p id="capabilities"></p>
+        <p id="hardware-counts"></p>
+        <p id="screen-counts" class="fine"></p>
+        <p class="fine">기능 “있음”은 API 감지만 뜻합니다. 성공 여부는 실제 테스트 결과로 판단합니다. 일반 PC 브라우저에는 래빗 AI 브리지가 없을 수 있습니다.</p>
+      </details>
+      <button id="copy-report" type="button">진단 결과 복사</button>
+      <p class="fine">복사 결과에는 인식 문장·가수·곡명·AI 원문 응답·오디오가 포함되지 않습니다.</p>
+      <p id="copy-status" role="status"></p>
+      <textarea id="report" rows="8" readonly hidden aria-label="복사할 진단 결과"></textarea>
+    </section>
+    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r23-test</p></footer>
+  </main>
+  <aside id="active-controls" hidden aria-label="진행 중인 테스트">
+    <p id="active-status" role="status">확인 중</p>
+    <div><button id="capture-release" type="button">입력 종료</button><button id="cancel-test" type="button">취소</button></div>
+  </aside>
+  <script type="module" src="./rabbit-test.mjs?v=20261025-r23-test"></script>
+</body>
+</html>

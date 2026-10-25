@@ -5,6 +5,7 @@ export function getLocale(source = globalThis.navigator) {
 }
 
 const english = {
+  'API 키 없이 래빗 음성 테스트': 'Test rabbit voice without an API key',
   '음성 검색 권한이 필요합니다. 연결 설정에서 Spotify에 다시 로그인해 주세요.': 'Voice search needs permission. Log in to Spotify again from connection settings.',
   '곡 제목과 가수 이름을 확인해 주세요.': 'Check the song title and artist name.',
   '유효한 Spotify 곡을 선택해 주세요.': 'Choose a valid Spotify track.',
@@ -77,7 +78,7 @@ const english = {
 "휴대폰에서 Client ID를 보내 주세요.": "Send your Client ID from your phone.",
 "연결 코드를 만들고 있습니다.": "Creating a connection code…",
 "Client ID를 받았습니다. 기기 사용 방식을 선택하고 로그인해 주세요.": "Client ID received. Choose a device mode and log in.",
-"버전 20261025-r22 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r22 · Disconnect removes saved login data.",
+"버전 20261025-r23 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r23 · Disconnect removes saved login data.",
   '이 기기에 저장된 Client ID 불러오기': 'Use the Client ID saved on this device',
   '기존 Client ID를 불러왔습니다. 로그인 버튼을 눌러 주세요.': 'Previous Client ID restored. Select the login button.',
   '버전 20261018-r19 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r19 · Disconnect removes saved login data.',

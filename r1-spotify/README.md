@@ -133,6 +133,23 @@ Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls
 
 ## Voice requests
 
+### Test on r1 without an API key
+
+The [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html) needs **no Spotify login or Gemini key**. Open **Test rabbit voice without an API key** in the existing Creation's connection settings, or register the diagnostic URL as a Creation launch URL. Rabbit AI may be unavailable in a desktop or phone browser. The diagnostic UI is in Korean.
+
+1. Run **래빗 AI 연결 확인** to extract artist/title from a fixed example using Rabbit's text LLM channel.
+2. Select speech recognition and Korean, hold the side button, wait for the listening indicator, say **“아이유의 밤편지 틀어줘”**, then release. If you released while waiting for microphone permission, grant it and hold again. An on-screen hold button is also available.
+3. Check the transcript, then select **인식 문장 분석** to send it to Rabbit AI and inspect the artist/title.
+4. If recognition fails, try microphone-only recording to distinguish microphone access from recognition-service availability. Copy the report or share the displayed status/error codes.
+
+Recognition here uses the Web Speech API; it does not establish access to Rabbit's native speech recognizer. Browser default means the browser's default language, **not guaranteed automatic language detection**. Test English, Japanese and default separately after Korean works. API presence alone is not a pass: a real transcript and successful Rabbit analysis of that transcript are needed to verify this keyless path on the tested device/language. Automatic multilingual recognition and end-to-end Spotify voice playback remain separate tests.
+
+Speech may be sent to the browser vendor's recognition service. Only an explicit button press sends the example or recognized text to Rabbit; speaker output and journal logging are not requested. Microphone-only mode discards audio and records only byte count and format. Copied reports exclude spoken text, raw AI replies and credentials. Cancel/page exit stops capture and invalidates late results; an already dispatched Rabbit server request cannot be recalled.
+
+Diagnostic version: `20261025-r23-test`. It uses the [documented Rabbit SDK](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) text LLM channel, without guessing undocumented native audio APIs. Automated checks simulate speech and Rabbit replies; actual r1 results will be recorded after user testing.
+
+### Request songs with server speech recognition
+
 The source includes push-to-talk search for the open Creation's player and lyrics screens. It needs a configured voice backend and an updated deployment; a GitHub update alone does not enable it on the public app. Existing playback controls work without voice configuration. Recording and the full recognition-to-playback flow still need verification on a real r1.
 
 **Already signed in before this update? Reconnect and sign in once** to grant the added `user-read-private` permission used by Spotify search and `/v1/me` identity verification. Refreshing an existing token cannot add OAuth permissions. See [Spotify's scope reference](https://developer.spotify.com/documentation/web-api/concepts/scopes).
@@ -297,7 +314,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; real r1 microphone permissions/recording, live multilingual recognition and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r22`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r23`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 
