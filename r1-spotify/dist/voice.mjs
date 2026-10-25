@@ -1,9 +1,10 @@
-import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r28';
+import { parseSongRequest, createSongSearchRequest } from './song-request.mjs?v=20261025-r29';
 
 // Each hold owns its recorder/results; the microphone stays muted between holds.
 // Safety stop for a missing button-release event, not a normal speaking deadline.
 export const MAX_RECORDING_MS = 60000;
 export const MAX_AUDIO_BYTES = 2 * 1024 * 1024;
+export const RECORDER_START_TIMEOUT_MS = 8000;
 const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 const serverMessages = {
   unavailable: '음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.',
@@ -80,7 +81,7 @@ export class VoiceController {
     this.session = null;
     this.microphoneStream = null;
     this.microphoneEpoch = 0;
-    this.state = { phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] };
+    this.state = { phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [] };
   }
   get active() { return Boolean(this.session); }
   get microphoneReady() { return this.usableMicrophone(this.microphoneStream); }
@@ -113,7 +114,7 @@ export class VoiceController {
     this.clearTimer(session.timer);
     session.abort.abort();
     if (session.recorder) {
-      session.recorder.ondataavailable = session.recorder.onstop = session.recorder.onerror = null;
+      session.recorder.onstart = session.recorder.ondataavailable = session.recorder.onstop = session.recorder.onerror = null;
       try { if (session.recorder.state !== 'inactive') session.recorder.stop(); } catch { this.discardMicrophone(session.stream); }
     }
     this.parkMicrophone(session);
@@ -124,7 +125,7 @@ export class VoiceController {
     const previous = this.session;
     this.session = null;
     if (previous) this.cleanup(previous);
-    this.update({ phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] });
+    this.update({ phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [] });
   }
   fail(session, message) {
     if (this.session !== session) return;
@@ -144,9 +145,9 @@ export class VoiceController {
   }
   async begin() {
     if (this.active || !this.canStart()) return;
-    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, device: this.deviceId(), microphoneEpoch: this.microphoneEpoch };
+    const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, started: false, device: this.deviceId(), microphoneEpoch: this.microphoneEpoch };
     this.session = session;
-    this.update({ phase: 'preparing', message: '마이크를 준비하고 있습니다. 계속 눌러 주세요.', transcript: '', language: '', tracks: [] });
+    this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [] });
     try {
       if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('이 브라우저에서 녹음을 지원하지 않습니다. HTTPS와 마이크 권한을 확인해 주세요.');
       if (this.transcriber) {
@@ -173,8 +174,22 @@ export class VoiceController {
       session.stream = stream;
       const mimeType = mimeTypes.find(type => this.Recorder.isTypeSupported?.(type));
       session.recorder = new this.Recorder(stream, { ...(mimeType ? { mimeType } : {}), audioBitsPerSecond: 64000 });
+      session.recorder.onstart = () => {
+        if (!this.current(session) || !session.held || session.started) return;
+        if (session.recorder.state !== 'recording' || !this.usableMicrophone(stream)) {
+          this.discardMicrophone(stream);
+          this.fail(session, '녹음을 시작하지 못했습니다. 버튼을 놓고 다시 눌러 주세요.');
+          return;
+        }
+        this.clearTimer(session.timer);
+        session.started = true;
+        stream.getAudioTracks?.().forEach(track => { track.enabled = true; });
+        if (!stream.getAudioTracks) stream.getTracks().forEach(track => { track.enabled = true; });
+        session.timer = this.setTimer(() => this.release(), this.maxDuration);
+        this.update({ phase: 'recording', message: '지금 말하세요' });
+      };
       session.recorder.ondataavailable = event => {
-        if (!this.current(session) || !event.data?.size) return;
+        if (!this.current(session) || !session.started || !event.data?.size) return;
         session.bytes += event.data.size;
         if (session.bytes > this.maxBytes) { this.fail(session, '녹음 크기가 너무 큽니다. 더 짧게 말해 주세요.'); return; }
         session.chunks.push(event.data);
@@ -195,11 +210,14 @@ export class VoiceController {
         this.parkMicrophone(session);
         void this.process(session);
       };
+      // start() returning only means the request was accepted. Signal readiness
+      // when the recorder actually starts, with audio muted until that event.
+      session.timer = this.setTimer(() => {
+        if (!this.current(session) || session.started) return;
+        this.discardMicrophone(stream);
+        this.fail(session, '녹음을 시작하지 못했습니다. 버튼을 놓고 다시 눌러 주세요.');
+      }, RECORDER_START_TIMEOUT_MS);
       session.recorder.start(250);
-      stream.getAudioTracks?.().forEach(track => { track.enabled = true; });
-      if (!stream.getAudioTracks) stream.getTracks().forEach(track => { track.enabled = true; });
-      session.timer = this.setTimer(() => this.release(), this.maxDuration);
-      this.update({ phase: 'recording', message: '듣고 있습니다. 놓으면 검색합니다.' });
     } catch (error) {
       if (this.current(session) && session.stream) this.discardMicrophone(session.stream);
       if (this.current(session)) this.fail(session, ['NotAllowedError', 'SecurityError'].includes(error.name)
@@ -210,7 +228,11 @@ export class VoiceController {
     const session = this.session;
     if (!session || !session.held) return;
     session.held = false;
-    if (this.state.phase === 'preparing') { this.cancel(); return; }
+    if (this.state.phase === 'preparing') {
+      this.cancel();
+      this.update({ message: '녹음 전에 버튼을 놓았습니다. 다시 누르고 “지금 말하세요”를 기다리세요.' });
+      return;
+    }
     if (this.state.phase !== 'recording') return;
     this.clearTimer(session.timer);
     this.update({ phase: 'transcribing', message: '언어를 감지하고 곡을 찾고 있습니다.' });

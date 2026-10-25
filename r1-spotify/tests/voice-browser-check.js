@@ -16,6 +16,16 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
         sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ access_token: 'fake-access', refresh_token: 'fake-refresh', clientId: 'a'.repeat(32), expiresAt: Date.now() + 3600000 }));
         window.micCalls = 0; window.micStops = 0; window.micTracks = []; window.recordingCount = 0;
         window.delayMicrophone = false; window.pendingMicrophones = [];
+        window.delayRecorderStart = true; window.vibrations = [];
+        window.wakeRequests = 0; window.wakeReleases = 0;
+        Object.defineProperty(navigator, 'vibrate', { configurable: true, value: duration => { window.vibrations.push(duration); return true; } });
+        Object.defineProperty(navigator, 'wakeLock', { configurable: true, value: { request: async type => {
+          if (type !== 'screen') throw new Error('Unexpected wake lock type');
+          window.wakeRequests++;
+          const lock = new EventTarget(); lock.released = false;
+          lock.release = async () => { if (!lock.released) { lock.released = true; window.wakeReleases++; lock.dispatchEvent(new Event('release')); } };
+          return lock;
+        } } });
         window.modelLoads = 0; window.modelCancels = 0;
         window.rabbitTexts = []; window.modelError = false; window.delayTranscription = false;
         // No Rabbit text bridge is present: both clear and loose commands must work.
@@ -36,6 +46,9 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
           start() {
             if (!this.stream.getTracks().every(track => track.readyState === 'live')) throw new Error('Recorder started without live microphone');
             this.state = 'recording'; window.recordingCount++;
+            const started = () => { if (this.state === 'recording') this.onstart?.(); };
+            if (window.delayRecorderStart) window.finishRecorderStart = started;
+            else queueMicrotask(started);
           }
           stop() { this.state = 'inactive'; window.recordingCount--; queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['fake-audio'], { type: this.mimeType }) }); this.onstop?.(); }); }
         };
@@ -73,19 +86,51 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.goto(baseURL); await tab.locator('#title').filter({ hasText: '밤편지' }).waitFor();
       await tab.waitForFunction(() => window.modelLoads === 1);
       check(await tab.evaluate(() => window.micCalls) === 0, 'Background prepare opened microphone');
-      // A physical hold on playback immediately records even before model download completes.
+      // A physical hold must not claim readiness until the recorder's start event.
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      await tab.locator('#voice-panel[data-phase="preparing"]').waitFor();
+      await tab.waitForFunction(() => Boolean(window.finishRecorderStart));
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '준비 중' : 'Getting ready'), 'Preparing headline is ambiguous');
+      check(await tab.locator('#voice-instruction').innerText() === (locale === 'ko-KR' ? '아직 말하지 마세요. 버튼을 계속 누르고 기다리세요.' : 'Do not speak yet. Keep holding the button.'), 'Preparing instruction invites speech too early');
+      check(await tab.locator('#voice-recording').isHidden(), 'Elapsed recording clock appeared before actual start');
+      check(await tab.locator('#voice-model-status').isHidden() && await tab.locator('#voice-prepare').isHidden(), 'Model setup competes with microphone preparation cue');
+      check(await tab.evaluate(() => window.vibrations.length === 0 && !window.micTracks[0].enabled), 'Start cue or microphone enabled before actual recorder start');
+      check(!/지금 말해도|You can speak now/.test(await tab.locator('#voice-model-status').innerText()), 'Model setup contradicts microphone readiness');
+      check(await tab.evaluate(() => window.wakeRequests === 1 && window.wakeReleases === 0), 'Voice panel did not request screen wake lock');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-preparing-' + locale + '.png' });
+      await tab.evaluate(() => { window.delayRecorderStart = false; window.finishRecorderStart(); });
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '지금 말하세요' : 'Speak now'), 'Actual recording did not show explicit speak cue');
+      check(await tab.locator('#voice-model-status').isHidden() && await tab.locator('#voice-prepare').isHidden(), 'Cold model preparation competes with active recording cue');
+      check(await tab.locator('#voice-instruction').innerText() === (locale === 'ko-KR' ? '말을 마치면 우측 버튼을 놓으세요.' : 'When you finish speaking, release the right button.'), 'Recording lacks release instruction');
+      check(await tab.evaluate(() => window.vibrations.length === 1), 'Recording cue did not vibrate exactly once');
+      await tab.waitForFunction(() => document.getElementById('voice-elapsed').textContent !== '0:00');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-recording-' + locale + '.png' });
+      await tab.setViewportSize({ width: 240, height: 240 });
+      const recordingButton = await tab.locator('#voice-record').boundingBox();
+      const recordingHint = await tab.locator('#voice-instruction').boundingBox();
+      const recordingContent = await tab.locator('#voice-content').boundingBox();
+      check(recordingButton.y + recordingButton.height <= 240 && recordingHint.y + recordingHint.height <= recordingContent.y + recordingContent.height, 'Recording cue or release instruction clipped at 240px height');
+      check(await tab.evaluate(() => document.documentElement.scrollWidth === 240), 'Recording phase overflows horizontally');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-recording-compact-' + locale + '.png' });
+      await tab.setViewportSize({ width: 240, height: 282 });
       check(await tab.evaluate(() => window.micCalls === 1 && window.micTracks[0].enabled && window.recordingCount === 1), 'Physical hold did not start first recording');
       check(await tab.locator('#voice-prepare').isHidden(), 'Normal flow still needs a prepare button');
       check(await tab.evaluate(() => window.mockRecognizer.ready) === false, 'Cold hold test was already warm');
       await tab.keyboard.press('Escape');
+      check(await tab.evaluate(() => window.wakeReleases === 1), 'Closing voice panel retained screen wake lock');
       check(await tab.evaluate(() => window.modelCancels) === 0, 'Closing a recording cancelled background model setup');
       check(await tab.evaluate(() => window.micStops === 0 && window.micTracks[0].readyState === 'live' && !window.micTracks[0].enabled && window.recordingCount === 0), 'Closing panel did not retain muted microphone');
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
       await tab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
+      check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '녹음 완료 · 인식 중' : 'Recorded · Transcribing'), 'Post-release state does not confirm recorded audio');
+      check(await tab.locator('#voice-recording').isHidden(), 'Recording clock remained after release');
+      const stoppedClock = await tab.locator('#voice-elapsed').innerText();
+      await tab.waitForTimeout(250);
+      check(await tab.locator('#voice-elapsed').innerText() === stoppedClock, 'Elapsed recording clock kept running after release');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-processing-' + locale + '.png' });
       check(playback.length === 0, 'Cold command played before model readiness');
       check(await tab.evaluate(() => window.micCalls === 1 && window.micStops === 0 && !window.micTracks[0].enabled && window.recordingCount === 0), 'Waiting for model recorded audio or reacquired microphone');
       await tab.evaluate(() => window.finishModel());
@@ -113,6 +158,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await tab.evaluate(() => window.micCalls === 1 && window.micStops === 0 && !window.micTracks[0].enabled && window.recordingCount === 0), 'Three holds failed to reuse one muted microphone connection');
       check(playback.length === 1, 'Ambiguous result played automatically');
       check(await tab.locator('#voice-results button').count() === 2, 'Candidates missing');
+      check(await tab.locator('#voice-record').isDisabled() && await tab.locator('#voice-record').innerText() === (locale === 'ko-KR' ? '위에서 곡을 선택하세요' : 'Choose a song above'), 'Disabled candidate-state button invites an unavailable recording action');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-candidates-' + locale + '.png' });
       await tab.locator('#voice-results button').nth(1).click();
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
@@ -153,6 +199,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+      check(await tab.evaluate(() => window.wakeRequests === window.wakeReleases), 'Leaving page retained screen wake lock');
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Leaving page leaked microphone');
       check(uploads.length === 0 && playback.length === 3, 'Leaving page submitted voice');
       await tab.evaluate(() => window.dispatchEvent(new Event('pageshow')));
@@ -199,6 +246,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(uploads.length === 0 && playback.length === 3, 'Lifecycle cleanup submitted voice');
       const modeTab = await context.newPage(); modeTab.on('pageerror', error => errors.push(error.message));
       await modeTab.goto(baseURL); await modeTab.locator('#title').filter({ hasText: '밤편지' }).waitFor();
+      await modeTab.evaluate(() => { window.delayRecorderStart = false; });
       await modeTab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await modeTab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await modeTab.keyboard.press('Escape');
@@ -209,7 +257,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await modeTab.evaluate(() => window.recordingCount === 0 && window.micCalls === 1), 'Session-mode change did not release microphone');
       await modeTab.close();
       check(errors.length === 0, 'Browser errors: ' + errors.join('; '));
-      reports.push({ locale, playback: playback.length, uploads: uploads.length, modelLoads: await tab.evaluate(() => window.modelLoads), microphoneRequests: await tab.evaluate(() => window.micCalls), repeatedHoldsRequests: 1, lifecycleStops: await tab.evaluate(() => window.micStops), sessionModeRelease: true, bridgeImports, looseQuery: true, errors });
+      reports.push({ locale, playback: playback.length, uploads: uploads.length, modelLoads: await tab.evaluate(() => window.modelLoads), microphoneRequests: await tab.evaluate(() => window.micCalls), repeatedHoldsRequests: 1, lifecycleStops: await tab.evaluate(() => window.micStops), recorderStartSignal: true, recordingClock: true, screenWakeReleased: await tab.evaluate(() => window.wakeRequests === window.wakeReleases), sessionModeRelease: true, bridgeImports, looseQuery: true, errors });
     } finally { await context.close(); }
   }
   return reports;

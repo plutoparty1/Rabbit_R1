@@ -119,8 +119,8 @@ Spotify development-mode user and request limits apply to **each user's own Spot
 | --- | --- | --- |
 | Player | Swipe artwork left / right | Next / previous track |
 | Player | Press r1 side button once | Play / pause |
-| Player / Lyrics | Hold r1 side button, speak, then release | Record and search Spotify by artist and song; automatically play a unique exact match or choose a result |
-| Player | Voice search button | Hold the side button or the recording control, then release to search; model preparation is automatic |
+| Player / Lyrics | Hold r1 side button, wait for “Speak now”, speak, then release | Record and search Spotify by artist and song; automatically play a unique exact match or choose a result |
+| Player | Voice search button | Hold the side button or recording control; speak only after the red recording indicator appears, then release to search |
 | Player | Wheel up / down | Volume +5% / −5%, within 0–100%, if supported by the active device |
 | Player | Tap artwork | Open lyrics |
 | Lyrics | Wheel or touch scroll | Explore freely; turns off automatic following |
@@ -135,7 +135,7 @@ Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls
 
 ### Test on r1 without an API key
 
-The r28 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet. The loaded model stays in memory across successful requests, and model files use the browser cache when available. They are not downloaded on every hold. Reloading still requires model initialization; a cleared or evicted cache, a changed model, or a new WebView storage context can require another download. This is browser-based local inference, not access to Rabbit's native speech recognizer.
+The r29 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet. The loaded model stays in memory across successful requests, and model files use the browser cache when available. They are not downloaded on every hold. Reloading still requires model initialization; a cleared or evicted cache, a changed model, or a new WebView storage context can require another download. This is browser-based local inference, not access to Rabbit's native speech recognizer.
 
 Open the [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html?v=20261025-r26-test) from **Test rabbit voice without an API key** in the Creation's connection settings. It needs **no Spotify login**. Check the `20261025-r26-test` label, then:
 
@@ -151,12 +151,14 @@ The user reported Rabbit AI connection success, a Web Speech timeout and a 20,26
 ### Request songs in the player
 
 1. Sign in to Spotify and start playback on another device with the same account. The player automatically prepares the voice model in the background.
-2. **Hold the side button on the player, speak, and release.** Recording starts without a separate preparation step. If the first download is still running, only analysis waits after recording; the on-screen recording button also works.
+2. **Hold the side button and wait for the red recording indicator and “Speak now”. Keep holding while speaking, then release when finished.** “Preparing” means recording has not started; speech during that wait is not saved. The recording timer confirms that recording has started. Releasing starts recognition and search; there is no live transcript while holding. If the first model download is still running, analysis waits after recording. The on-screen recording button follows the same sequence.
 3. Local Whisper detects the language and transcribes. Explicit patterns such as ‘play title by artist’ are parsed immediately; other phrasing becomes a conservative Spotify text query, with obvious play-command words removed. Rabbit AI is not called by the player. Spotify plays a unique exact title-and-artist match. Unstructured text searches, uncertain parsing and artist-catalog recovery require choosing a candidate.
 
 r28 reuses the microphone connection after the first allowed hold while the app remains in the foreground. Between recordings, its audio tracks are muted; recording runs only while the button is held. Ordinary cancellation or closing the voice panel keeps this muted connection ready. Leaving or hiding the page, disconnecting Spotify, or changing session mode releases it; the next hold opens it again. A stopped device track is also reopened. The browser may continue showing its microphone indicator while the muted connection is retained. “Preparing microphone” refers to opening this connection, not downloading the model. This reuse applies to the main player; the separate diagnostic page still releases its microphone after each test.
 
-r28 retains r26’s shared audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
+r29 shows “Speak now” only after the recorder's actual start event, with a red recording indicator, elapsed time and release instructions. Model-loading text never grants permission to speak. If the recorder fails to start within eight seconds after microphone acquisition, it stops and reports an error. The voice panel requests a screen wake lock where supported and releases it when closed or hidden. If the browser rejects or cannot maintain it, the UI says screen-on maintenance is unavailable; this cannot override Rabbit firmware sleep or guarantee the app remains open. A brief vibration on recording start is optional and browser-dependent.
+
+r29 retains r26’s shared audio encoder result for language detection and transcription. If a garbled title cannot be found, artist-catalog candidates provide recovery. This does **not correct the raw recognition text or guarantee accuracy**; recovered candidates always wait for a selection.
 
 Try **“아이유의 밤편지 틀어줘”** or **“Play Yesterday by The Beatles.”** The model is instructed to transcribe rather than translate. Small models can mishear names, short utterances and mixed-language requests; inspect the displayed text and candidates. Recording ends on release. The former 15-second limit is replaced by a 60-second/2 MiB safety ceiling for a stuck button. Cancel, hide/page exit, screen changes or disconnect invalidate pending work.
 
@@ -327,7 +329,7 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
 | Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; r1 recording decode, local Whisper speed/accuracy and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r28`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r29`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r28`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r29`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,18 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r29 recording feedback / 녹음 상태 안내
+
+Validation: **170 automated tests passed**. Korean/English browser checks at 240×282 and 240×240 cover delayed recorder startup, contradictory-guidance removal, red recording state and running/stopped elapsed time, release instructions, optional vibration, wake-lock acquisition/release, microphone reuse and existing search/playback. A separate actual Edge MediaRecorder check used a generated audio tone with real controller/recorder code: muted tracks emitted `start`, three holds reused one stream, each 600 ms capture produced a non-silent 5,067-byte WebM/Opus recording, and release muted the stream. It used no physical microphone, real speech model or Spotify account; r1 latency, audio quality and sleep behavior remain unverified.
+
+The user reported contradictory guidance, a green control while unsure whether recording was active, no apparent response while speaking, and the r1 screen turning off and leaving the app during a wait. The code showed a concrete contradiction: model loading could display “지금 말해도 됩니다” while the microphone was still preparing. This message is removed. Only the recorder's `start` event now authorizes the recording presentation. Preparation uses an explicit “not yet” instruction; recording uses a red indicator, “Speak now”, elapsed time and an instruction to release after speaking; processing explicitly says recording has finished. No live transcription is promised while holding. An eight-second recorder-start watchdog prevents indefinite waiting after microphone acquisition. Late start events after cancellation cannot revive recording. The initial microphone permission deadline remains 30 seconds, independent of model download and recorder startup.
+
+사용자는 준비 중 말해도 되는지 알 수 없고 녹색 버튼과 문구가 혼란스럽다고 보고했습니다. 실제 코드에서 마이크 연결 전에도 모델 준비 문구가 “지금 말해도 됩니다”라고 표시되는 모순을 확인했습니다. r29는 이 문구를 제거하고 실제 녹음 시작 이벤트 이후에만 빨간 녹음 표시·“지금 말하세요”·경과 시간을 표시합니다. 말을 마치면 버튼을 놓아야 인식이 시작됩니다. 마이크 연결 후 녹음 시작이 8초 넘게 지연되면 중단하며, 취소 뒤 늦게 도착한 시작 이벤트는 무시합니다. 마이크 권한 대기 30초와 모델 다운로드 대기는 별도입니다.
+
+Screen-on maintenance uses the standard Screen Wake Lock API only while the voice panel is open. Unsupported, rejected or revoked locks are surfaced without breaking recording. Closing or hiding the panel releases the lock, including a request resolved after closure. Rabbit's documented Creation interface does not expose a native screen-timeout override; no undocumented API or synthetic activity is used. Desktop tests cannot establish that the r1 firmware will honor a browser wake lock or identify the cause of the user's app exit. Microphone reuse and model caching from r28 remain; raw recognition accuracy and inference computation are unchanged.
+
+화면 켜짐 유지는 브라우저의 표준 Wake Lock 지원 범위 안에서 요청합니다. 래빗 펌웨어의 화면 꺼짐·앱 이탈 원인을 확정하지 않았으며 실기에서 유지되는지는 추가 확인이 필요합니다. 미지원·요청 거부가 음성 녹음을 막지는 않습니다. r28의 마이크 연결·모델 캐시 재사용을 유지하며 음성 인식 정확도와 추론 계산은 바꾸지 않습니다.
 
 ## r28 microphone reuse / 마이크 연결 재사용
 
@@ -89,7 +101,7 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
-For the main player, open `?v=20261025-r28`, allow the microphone on the first hold, and complete two more hold/speak/release requests without leaving the app. The second and third holds should skip reopening a healthy microphone. Close/reopen the voice panel to confirm reuse, then leave and return to confirm the next hold reconnects. Record microphone-start and post-release recognition delays separately. / 재생 화면 r28에서 첫 마이크 접근을 허용하고 앱을 나가지 않은 채 두 번 더 누르고 말한 뒤 놓습니다. 두 번째부터는 정상 마이크 연결을 다시 열지 않아야 합니다. 음성 창만 닫았을 때는 유지하고 앱을 나갔다 오면 다음 누름에서 재연결하는지 확인합니다. 녹음 시작 대기와 놓은 뒤 인식 대기를 구분합니다.
+For the main player, open `?v=20261025-r29`, allow the microphone on the first hold, and complete two more hold/speak/release requests without leaving the app. The second and third holds should skip reopening a healthy microphone. Close/reopen the voice panel to confirm reuse, then leave and return to confirm the next hold reconnects. Record microphone-start and post-release recognition delays separately. / 재생 화면 r29에서 첫 마이크 접근을 허용하고 앱을 나가지 않은 채 두 번 더 누르고 말한 뒤 놓습니다. 두 번째부터는 정상 마이크 연결을 다시 열지 않아야 합니다. 음성 창만 닫았을 때는 유지하고 앱을 나갔다 오면 다음 누름에서 재연결하는지 확인합니다. 녹음 시작 대기와 놓은 뒤 인식 대기를 구분합니다.
 
 The separate diagnostic flow remains:
 
@@ -104,15 +116,16 @@ A successful transcript establishes only the tested device/language/request. Con
 
 - [Transformers.js pipeline documentation](https://huggingface.co/docs/transformers.js/v3.8.1/en/pipelines) and [pinned model files](https://huggingface.co/Xenova/whisper-tiny/tree/5332fcc35e32a33b86612b9a57a89be7906102b1): selected implementation, running locally in the browser.
 - [Pinned cache defaults](https://github.com/huggingface/transformers.js/blob/3.8.1/src/env.js) and [cache lookup implementation](https://github.com/huggingface/transformers.js/blob/3.8.1/src/utils/hub.js): browser model-file reuse when Cache API is available.
+- [MediaStream Recording specification](https://w3c.github.io/mediacapture-record/) and [Screen Wake Lock specification](https://w3c.github.io/screen-wake-lock/): actual recorder start notification and advisory screen-on requests. A cross-origin parent frame may need to delegate `screen-wake-lock`; the Creation cannot grant itself that permission.
 - [Whisper language detection source](https://github.com/openai/whisper/blob/main/whisper/decoding.py): first-token classification over language tokens, followed by same-language transcription.
 - [ONNX Runtime browser support](https://onnxruntime.ai/docs/get-started/with-javascript/web.html#supported-versions) and [thread configuration](https://onnxruntime.ai/docs/tutorials/web/env-flags-and-session-options.html): Android Chrome/Edge WASM support and single-thread operation without cross-origin-isolated threading. This is not an r1 certification.
 - [Rabbit Creation text bridge](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md): documented text AI integration; no invented native audio API.
 - [whisper.cpp browser example](https://github.com/ggml-org/whisper.cpp/tree/master/examples/whisper.wasm): considered, not implemented. Its default build uses pthreads and needs a different integration/build configuration.
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper): considered, not implemented. It can run without a paid AI API key but requires a Python host/PC/server; that is an additional dependency for this Creation.
 
-The main player now prepares automatically, records immediately on a hold even if preparation is incomplete, and ends recording on release (60-second stuck-button ceiling). The separate diagnostic page retains an explicit preparation control for isolating model loading.
+The main player prepares the model automatically. Hold the button and wait for “Speak now” before speaking; recording can start while model loading continues and ends on release (60-second stuck-button ceiling). The separate diagnostic page retains an explicit preparation control for isolating model loading.
 
-재생 화면에서는 모델을 자동으로 준비하며, 준비 중이어도 누른 즉시 녹음을 시작하고 놓으면 끝냅니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
+재생 화면에서는 모델을 자동으로 준비합니다. 버튼을 누르고 “지금 말하세요”가 표시된 뒤 말하며, 놓으면 녹음이 끝납니다. 모델 다운로드와 녹음 준비는 별개입니다. 버튼 오작동 보호 상한은 60초입니다. 별도 진단 화면에는 다운로드 단계를 확인하기 위한 준비 버튼을 유지합니다.
 
 The retained Gemini module is a developer-only legacy option. The r25 default player does not call `/api/voice/config` or `/api/voice/search`; merely setting Gemini secrets does not select it.
 

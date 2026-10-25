@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS, createKeylessTranscriber } from '../dist/voice.mjs';
+import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS, RECORDER_START_TIMEOUT_MS, createKeylessTranscriber } from '../dist/voice.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -16,7 +16,7 @@ function fixture(options = {}) {
   class Recorder {
     static isTypeSupported(type) { return type === 'audio/webm;codecs=opus'; }
     constructor(stream, config) { this.stream = stream; this.state = 'inactive'; this.mimeType = config.mimeType; recorders.push(this); }
-    start() { this.state = 'recording'; }
+    start() { this.state = 'recording'; queueMicrotask(() => this.onstart?.()); }
     stop() {
       this.state = 'inactive';
       queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['audio'], { type: this.mimeType }) }); this.onstop?.(); });
@@ -234,6 +234,87 @@ test('warm successive holds reuse the model and do not cancel it on success or i
   assert.equal(f.captures(), 1); assert.equal(f.stopped(), 0);
   assert.equal(f.calls.filter(call => call[0] === 'play').length, 2);
   assert.equal(f.localCalls.some(call => call[0].startsWith('cancel')), false);
+});
+
+test('recording readiness and duration start only at the recorder start event', async () => {
+  const f = keylessFixture(), GoodRecorder = f.controller.Recorder, track = f.stream.getAudioTracks()[0];
+  f.controller.Recorder = class extends GoodRecorder { start() { this.state = 'recording'; } };
+  await f.controller.begin();
+  assert.equal(f.controller.state.phase, 'preparing');
+  assert.match(f.controller.state.message, /아직 말하지/);
+  assert.equal(track.enabled, false);
+  assert.equal([...f.timers.values()].some(timer => timer.ms === MAX_RECORDING_MS), false);
+  assert.equal([...f.timers.values()].some(timer => timer.ms === RECORDER_START_TIMEOUT_MS), true);
+  f.recorders[0].ondataavailable({ data: new Blob(['before-start']) });
+  f.recorders[0].onstart();
+  assert.equal(f.controller.state.phase, 'recording');
+  assert.equal(f.controller.state.message, '지금 말하세요');
+  assert.equal(track.enabled, true);
+  assert.equal([...f.timers.values()].some(timer => timer.ms === RECORDER_START_TIMEOUT_MS), false);
+  assert.equal([...f.timers.values()].some(timer => timer.ms === MAX_RECORDING_MS), true);
+  f.controller.release();
+  for (let i = 0; i < 6; i++) await tick();
+  assert.equal(await f.localCalls.find(call => call[0] === 'audio')[1].text(), 'audio');
+  assert.equal(f.controller.state.phase, 'done');
+});
+
+test('releasing or cancelling before recorder start cannot turn a later hold into recording', async () => {
+  for (const operation of ['release', 'cancel', 'releaseMicrophone']) {
+    const f = keylessFixture(), GoodRecorder = f.controller.Recorder, track = f.stream.getAudioTracks()[0];
+    f.controller.Recorder = class extends GoodRecorder { start() { this.state = 'recording'; } };
+    await f.controller.begin();
+    const lateStart = f.recorders[0].onstart;
+    f.controller[operation]();
+    assert.equal(f.controller.state.phase, 'idle', operation);
+    if (operation === 'release') assert.match(f.controller.state.message, /녹음 전에 버튼을 놓았습니다/);
+    assert.equal(track.enabled, false, operation);
+    assert.equal(f.recorders[0].state, 'inactive', operation);
+    assert.equal(f.recorders[0].onstart, null, operation);
+    assert.equal(f.controller.active, false, operation);
+    assert.equal(f.timers.size, 0, operation);
+    f.controller.Recorder = GoodRecorder;
+    await f.controller.begin();
+    const nextTrack = f.recorders[1].stream.getAudioTracks()[0];
+    lateStart(); await tick();
+    assert.equal(f.controller.state.phase, 'recording', operation);
+    assert.equal(nextTrack.enabled, true, operation);
+    assert.equal(f.captures(), operation === 'releaseMicrophone' ? 2 : 1, operation);
+    assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 0, operation);
+    f.controller.releaseMicrophone();
+  }
+});
+
+test('a recorder that never starts times out and cannot signal readiness afterwards', async () => {
+  const f = keylessFixture(), GoodRecorder = f.controller.Recorder;
+  f.controller.Recorder = class extends GoodRecorder { start() { this.state = 'recording'; } };
+  await f.controller.begin();
+  const lateStart = f.recorders[0].onstart;
+  f.fire(RECORDER_START_TIMEOUT_MS);
+  assert.equal(f.controller.state.phase, 'error');
+  assert.match(f.controller.state.message, /버튼을 놓고 다시/);
+  assert.equal(f.controller.microphoneReady, false);
+  assert.equal(f.controller.active, false);
+  assert.equal(f.stream.getAudioTracks()[0].readyState, 'ended');
+  assert.equal(f.timers.size, 0);
+  lateStart(); await tick();
+  assert.equal(f.controller.state.phase, 'error');
+  assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 0);
+  f.controller.Recorder = GoodRecorder;
+  await f.controller.begin();
+  assert.equal(f.captures(), 2); assert.equal(f.controller.state.phase, 'recording');
+  f.controller.releaseMicrophone();
+});
+
+test('a dead microphone cannot emit a recording-ready state from a delayed start', async () => {
+  const f = keylessFixture(), GoodRecorder = f.controller.Recorder;
+  f.controller.Recorder = class extends GoodRecorder { start() { this.state = 'recording'; } };
+  await f.controller.begin();
+  f.stream.getAudioTracks()[0].readyState = 'ended';
+  f.recorders[0].onstart();
+  assert.equal(f.controller.state.phase, 'error');
+  assert.equal(f.controller.microphoneReady, false);
+  assert.equal(f.changes.some(state => state.phase === 'recording'), false);
+  assert.equal(f.timers.size, 0);
 });
 
 test('three holds reuse one microphone, unmute only while recording, and keep audio separate', async () => {
