@@ -4,16 +4,16 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="referrer" content="no-referrer">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://cdn.jsdelivr.net; worker-src 'self' blob:; style-src 'self'; img-src 'self' data:; connect-src 'self' https://cdn.jsdelivr.net https://huggingface.co https://*.hf.co; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>R1 · API 키 없는 실기 테스트</title>
-  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r24-test">
+  <link rel="stylesheet" href="./rabbit-test.css?v=20261025-r25-test">
 </head>
 <body>
   <main>
     <header><h1>래빗 음성 진단</h1><a href="./">‹ Spotify</a></header>
-    <p class="intro">API 키·Spotify 로그인 없이 테스트<br><span class="tag">진단 버전 20261025-r24-test</span></p>
+    <p class="intro">API 키·Spotify 로그인 없이 테스트<br><span class="tag">진단 버전 20261025-r25-test</span></p>
     <nav class="jump-links" aria-label="테스트 단계로 이동"><a href="#rabbit-title">① AI</a><a href="#speech-title">② 음성</a><a href="#analyze-title">③ 분석</a><a href="#summary-title">결과</a></nav>
-    <p class="notice">①·③: 문장을 래빗 서버로 전송<br>②: 브라우저 음성 서비스를 쓸 수 있음<br>Gemini·Spotify 요청 및 녹음 저장 없음</p>
+    <p class="notice">Whisper: 기기 안에서 음성 인식<br>처음 약 65MB 다운로드 · API 키 없음<br>①·③은 문장만 래빗 AI로 전송</p>
 
     <section aria-labelledby="rabbit-title">
       <h2 id="rabbit-title">① 래빗 AI 연결</h2>
@@ -24,25 +24,29 @@
     </section>
 
     <section aria-labelledby="speech-title">
-      <h2 id="speech-title">② 브라우저 음성 인식</h2>
+      <h2 id="speech-title">② API 키 없는 음성 인식</h2>
+      <p>먼저 준비를 누르고 완료될 때까지 기다리세요. 그다음 3~5초 정도 짧게 말해 보세요. 기기 성능에 따라 인식 시간이 걸립니다.</p>
+      <button id="local-prepare" type="button" class="primary">음성 인식 준비 · 처음 약 65MB</button>
+      <p id="model-status" class="status" role="status">준비 전</p>
       <p>아래 버튼이나 래빗 옆 버튼을 누른 채 한 문장만 말하고 놓으세요. 최대 15초입니다. 처음에는 마이크 권한을 허용한 뒤 다시 누르세요.</p>
       <label for="speech-language">인식 언어</label>
       <select id="speech-language">
-        <option value="">브라우저 기본(자동 감지 보장 안 됨)</option>
-        <option value="ko-KR" selected>한국어</option>
+        <option value="" selected>자동 감지 · Whisper</option>
+        <option value="ko-KR">한국어</option>
         <option value="en-US">English</option>
         <option value="ja-JP">日本語</option>
       </select>
-      <p id="language-note" class="fine">한국어로 먼저 확인해 주세요. 이 검사는 래빗 기본 음성 인식이나 다국어 자동 감지 지원을 확인하는 검사가 아닙니다.</p>
+      <p id="language-note" class="fine">Whisper가 발화 언어를 추정합니다. 짧거나 여러 언어가 섞인 문장은 잘못 감지할 수 있습니다.</p>
       <label for="capture-mode">옆 버튼 · 화면 버튼의 테스트 모드</label>
       <select id="capture-mode">
-        <option value="speech">음성 → 텍스트</option>
+        <option value="local" selected>Whisper · 기기에서 인식</option>
+        <option value="speech">기존 브라우저 인식 · 비교용</option>
         <option value="microphone">마이크 녹음만 확인</option>
       </select>
       <button id="capture-hold" type="button" class="primary hold" aria-pressed="false">누르고 말하기</button>
       <p id="speech-status" class="status" role="status">미실행</p>
       <p id="speech-progress" class="fine">② 수신 신호: 아직 없음</p>
-      <p class="fine">“인식 서비스 시작”만으로 마이크 입력이나 음성 인식 성공이 확인되지는 않습니다.</p>
+      <p class="fine">Whisper 모드는 음성을 외부로 보내지 않습니다. 브라우저 비교 모드는 외부 인식 서비스를 쓸 수 있습니다.</p>
       <p id="speech-guidance" class="guidance" hidden></p>
       <p id="microphone-status" class="status" role="status" hidden>미실행</p>
       <label for="transcript">인식 문장 · 이 화면에만 표시</label>
@@ -68,7 +72,7 @@
       <p id="summary" role="status">①과 ②를 먼저 실행해 주세요.</p>
       <p id="stage-results" class="stage-results" aria-label="단계별 상태와 마지막 확인 신호"></p>
       <p class="fine">복사가 어려우면 단계명·오류 코드·마지막 확인 신호만 알려 주세요.</p>
-      <p class="fine">①·②·③ 성공은 API 키 없는 음성 → 래빗 AI 경로가 이 기기에서 동작했다는 뜻입니다. 곡명 정확성은 화면에서 확인해 주세요. 다국어 자동 감지와 Spotify 재생은 별도 확인이 필요합니다.</p>
+      <p class="fine">②의 문장과 ③의 가수·곡명이 맞는지 확인해 주세요. 이 진단 페이지는 Spotify 재생을 요청하지 않습니다.</p>
       <details open>
         <summary>기기 기능 · 입력 수신</summary>
         <p id="capabilities"></p>
@@ -81,12 +85,12 @@
       <p id="copy-status" role="status"></p>
       <textarea id="report" rows="8" readonly hidden aria-label="복사할 진단 결과"></textarea>
     </section>
-    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r24-test</p></footer>
+    <footer><a href="./">Spotify로 돌아가기</a><p>20261025-r25-test</p></footer>
   </main>
   <aside id="active-controls" hidden aria-label="진행 중인 테스트">
     <p id="active-status" role="status">확인 중</p>
     <div><button id="capture-release" type="button">입력 종료</button><button id="cancel-test" type="button">취소</button></div>
   </aside>
-  <script type="module" src="./rabbit-test.mjs?v=20261025-r24-test"></script>
+  <script type="module" src="./rabbit-test.mjs?v=20261025-r25-test"></script>
 </body>
 </html>

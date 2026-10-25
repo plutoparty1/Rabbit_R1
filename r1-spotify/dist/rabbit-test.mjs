@@ -1,11 +1,12 @@
-import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r24-test';
+import { RabbitProbe, SpeechProbe, MicrophoneProbe, PROBE_TEST_TEXT } from './rabbit-probe.mjs?v=20261025-r25-test';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r25';
 
 const $ = id => document.getElementById(id);
-const VERSION = '20261025-r24-test';
+const VERSION = '20261025-r25-test';
 const counts = { hardware: { longPressStart: 0, longPressEnd: 0, sideClick: 0, scrollUp: 0, scrollDown: 0 }, screen: { press: 0, release: 0, cancel: 0 } };
 const fresh = () => ({ state: 'not-run', code: '', attempts: 0, durationMs: 0, outputChars: 0, eventCounts: {}, timeline: [] });
-const results = { rabbit: fresh(), speech: fresh(), microphone: fresh(), analysis: fresh() };
-const stageLabels = { rabbit: '① 래빗 AI', speech: '② 음성', microphone: '② 마이크', analysis: '③ 문장 분석' };
+const results = { rabbit: fresh(), model: fresh(), speech: fresh(), microphone: fresh(), analysis: fresh() };
+const stageLabels = { rabbit: '① 래빗 AI', model: 'Whisper 준비', speech: '② 음성', microphone: '② 마이크', analysis: '③ 문장 분석' };
 // Only enumerated lifecycle events enter the report; callback payloads and speech stay on screen.
 const eventLabels = {
   'request-sent': '요청 전송', 'callback-received': '응답 수신', 'reply-unmatched': '요청 일치 실패', 'reply-invalid': '응답 형식 불일치',
@@ -13,6 +14,7 @@ const eventLabels = {
   'sound-start': '소리 감지', 'sound-end': '소리 종료', 'speech-start': '말소리 감지', 'speech-end': '말소리 종료',
   'interim-result': '임시 문장 수신', 'final-result': '최종 문장 수신', 'stop-requested': '종료 요청', ended: '인식 종료',
   'permission-requested': '마이크 권한 요청', 'stream-opened': '마이크 스트림 열림', 'recording-started': '녹음 시작', 'data-received': '오디오 데이터 수신',
+  'local-recording': '기기 마이크 녹음', 'local-transcribing': '기기 안에서 인식', 'local-result': 'Whisper 문장 수신',
 };
 const speechMilestones = ['start-requested', 'started', 'audio-start', 'sound-start', 'speech-start', 'interim-result', 'final-result'];
 const statuses = { 'not-run': '미실행', unsupported: '지원 API 없음', pending: '진행 중', success: '성공', error: '실패', 'timed-out': '시간 초과' };
@@ -25,7 +27,7 @@ const errors = {
   speech_result_timeout: '입력을 마친 뒤 8초 동안 최종 인식 문장이 오지 않았습니다.',
   speech_interim_only: '임시 문장만 도착했고 최종 인식 문장은 받지 못했습니다.',
   cancelled: '테스트를 취소했습니다.', permission: '마이크 또는 음성 인식 권한이 허용되지 않았습니다.',
-  no_microphone: '사용 가능한 마이크를 찾지 못했습니다.', no_speech: '최종 인식 문장이 없습니다. 말한 뒤 버튼을 놓아 주세요.',
+  no_microphone: '사용 가능한 마이크를 찾지 못했습니다.',
   network: '브라우저 음성 인식 서비스에 연결하지 못했습니다.',
   language_unsupported: '선택한 인식 언어를 지원하지 않습니다.',
   invalid_response: '래빗 응답은 왔지만 가수·곡명·언어 형식을 확인하지 못했습니다.',
@@ -34,23 +36,64 @@ const errors = {
   capture_failed: '마이크 녹음을 완료하지 못했습니다.', empty_audio: '수집된 오디오 데이터가 없습니다.',
   too_large: '녹음 크기 제한으로 중단했습니다.', invalid_text: '분석할 문장을 확인해 주세요.',
   aborted: '브라우저가 음성 인식을 중단했습니다.', busy: '다른 테스트가 진행 중입니다.', disposed: '페이지를 새로 열어 주세요.',
+  local_not_ready: '먼저 “음성 인식 준비”를 누르고 준비 완료까지 기다려 주세요.',
+  model_load_failed: 'Whisper 파일을 준비하지 못했습니다. 인터넷 연결을 확인하고 준비를 다시 눌러 주세요.',
+  local_model_timeout: 'Whisper 준비 시간이 지났습니다. 인터넷 연결을 확인하고 다시 준비해 주세요.',
+  local_transcription_timeout: '기기에서 인식하는 시간이 길어 중단했습니다. 3초 정도로 짧게 말하거나 한국어를 직접 선택해 주세요.',
+  local_worker_failed: '기기에서 Whisper 실행을 중단했습니다. 준비를 다시 눌러 주세요.',
+  microphone_timeout: '마이크 권한 응답을 받지 못했습니다. 권한을 허용한 뒤 다시 말해 주세요.',
+  stop_timeout: '녹음 종료 응답을 받지 못했습니다.',
+  audio_too_large: '녹음이 너무 큽니다. 짧게 다시 말해 주세요.', audio_too_long: '녹음이 너무 깁니다. 15초 안으로 다시 말해 주세요.',
+  transcription_failed: '기기에서 음성을 인식하지 못했습니다. 언어를 직접 선택하고 다시 말해 주세요.',
+  decode_failed: '이 기기가 녹음 파일을 읽지 못했습니다.', invalid_audio: '녹음 내용을 처리하지 못했습니다. 짧게 다시 말해 주세요.',
+  no_speech: '인식된 문장이 없습니다. 짧고 또렷하게 다시 말해 주세요.',
 };
-let busy = null, transcript = '', speechSelection = 'ko-KR', sequence = 0, pointerId = null, keyHeld = false;
+let busy = null, transcript = '', speechSelection = '', speechEngine = 'local', sequence = 0, pointerId = null, keyHeld = false, progressAt = 0;
 const rabbit = new RabbitProbe({ onState: event => onProbeState('rabbit', event) });
 const speech = new SpeechProbe({ onState: event => onProbeState('speech', event) });
 const microphone = new MicrophoneProbe({ onState: event => onProbeState('microphone', event) });
+const local = new LocalSpeechProbe({ onState: onLocalState });
+
+function onLocalState(event) {
+  if (busy?.kind === 'preparation') {
+    if (event.state === 'loading') {
+      const percent = event.progress?.progress;
+      if (Number.isFinite(percent) && percent < 100 && Date.now() - progressAt < 150) return;
+      progressAt = Date.now();
+      results.model.detail = Number.isFinite(percent) ? `현재 파일 ${Math.round(percent)}% · 처음 약 65MB` : '모델과 실행 파일 준비 중 · 처음 약 65MB';
+      $('active-status').textContent = results.model.detail;
+      render();
+    }
+    return;
+  }
+  if (busy?.engine !== 'local') return;
+  const code = { recording: 'local-recording', transcribing: 'local-transcribing', success: 'local-result' }[event.state];
+  if (code) onProbeState('speech', { state: 'diagnostic', event: code });
+  onProbeState('speech', event);
+}
+
+async function prepareLocal() {
+  const run = beginRun('model', 'preparation', 'screen');
+  if (!run) return;
+  try {
+    await local.prepare();
+    if (busy !== run) return;
+    Object.assign(results.model, { state: 'success', detail: '준비 완료 · 이제 누르고 말하세요.' });
+  } catch (cause) { if (busy === run) failure('model', cause); }
+  finally { finishRun(run); }
+}
 
 function lastReached(key) {
   const result = results[key];
   const event = key === 'speech'
-    ? [...speechMilestones].reverse().find(name => result.eventCounts[name]) || result.timeline[result.timeline.length - 1]?.event
+    ? [...(speechEngine === 'local' ? ['local-recording', 'local-transcribing', 'local-result'] : speechMilestones)].reverse().find(name => result.eventCounts[name]) || result.timeline[result.timeline.length - 1]?.event
     : result.timeline[result.timeline.length - 1]?.event;
   return eventLabels[event] || '이벤트 없음';
 }
 
 function capabilities() {
   return { secureContext: window.isSecureContext === true, rabbitBridge: rabbit.supported,
-    browserSpeech: speech.supported, microphoneRecording: microphone.supported,
+    browserSpeech: speech.supported, microphoneRecording: microphone.supported, localWhisper: local.supported, localWhisperReady: local.ready,
     nativeRabbitSpeech: 'not-documented' };
 }
 function updateCapabilities() {
@@ -61,11 +104,21 @@ function updateCapabilities() {
 }
 function render() {
   const capturing = busy?.kind === 'capture';
+  const localMode = $('capture-mode').value === 'local';
+  if (!local.ready && results.model.state === 'success') Object.assign(results.model, { state: 'not-run', detail: '음성 인식 준비를 다시 눌러 주세요.' });
+  $('local-prepare').hidden = !localMode;
+  $('local-prepare').disabled = !!busy || local.ready;
+  $('local-prepare').textContent = local.ready ? 'Whisper 준비 완료' : '음성 인식 준비 · 처음 약 65MB';
+  $('model-status').hidden = !localMode && !results.model.attempts;
+  $('speech-language').options[0].textContent = localMode ? '자동 감지 · Whisper' : '브라우저 기본 · 자동 감지 아님';
+  $('language-note').textContent = localMode
+    ? 'Whisper가 발화 언어를 추정합니다. 짧거나 여러 언어가 섞인 문장은 잘못 감지할 수 있습니다. 한국어를 직접 선택할 수도 있습니다.'
+    : '브라우저 기본 언어를 사용합니다. 자동 언어 감지를 켜는 옵션이 아닙니다. 인식 언어를 직접 선택할 수 있습니다.';
   $('rabbit-text').disabled = !!busy;
   $('rabbit-analyze').disabled = !!busy || !transcript;
   $('analysis-disabled-reason').hidden = !busy && !!transcript;
   $('analysis-disabled-reason').textContent = !transcript ? '③은 아직 실행되지 않았습니다. ②에서 최종 인식 문장을 받아야 누를 수 있습니다.' : '진행 중인 테스트가 끝나면 ③을 누를 수 있습니다.';
-  $('capture-hold').disabled = !!busy && !capturing;
+  $('capture-hold').disabled = (!!busy && !capturing) || (localMode && !local.ready && !capturing);
   $('capture-mode').disabled = !!busy;
   $('speech-language').disabled = !!busy;
   $('microphone-status').hidden = $('capture-mode').value !== 'microphone' && results.microphone.state === 'not-run';
@@ -79,12 +132,14 @@ function render() {
     el.dataset.state = result.state;
     el.textContent = `${stageLabels[key]} · ${statuses[result.state]}${result.detail ? ` · ${result.detail}` : ''}${result.code ? ` [${result.code}]` : ''}`;
   }
-  const reached = speechMilestones.filter(event => results.speech.eventCounts[event]);
+  const reached = (speechEngine === 'local' ? ['local-recording', 'local-transcribing', 'local-result'] : speechMilestones).filter(event => results.speech.eventCounts[event]);
   $('speech-progress').textContent = reached.length ? `② 수신 신호: ${reached.map(event => eventLabels[event]).join(' → ')}` : '② 수신 신호: 아직 없음';
   $('stage-results').textContent = Object.entries(results).map(([key, result]) => `${stageLabels[key]}: ${statuses[result.state]}${result.attempts ? ` · 마지막 확인: ${lastReached(key)}` : ''}${result.code ? ` [${result.code}]` : ''}`).join('\n');
   const speechFailed = ['unsupported', 'error', 'timed-out'].includes(results.speech.state);
   $('speech-guidance').hidden = !speechFailed;
-  $('speech-guidance').textContent = '화면의 “누르고 말하기” 버튼으로 한 문장만 다시 말해 보세요. 옆 버튼과 결과가 다르면 버튼 입력 경로를 구분할 수 있습니다. 계속 실패하면 모드를 “마이크 녹음만 확인”으로 바꿔 시험해 주세요.';
+  $('speech-guidance').textContent = speechEngine === 'local'
+    ? 'Whisper 준비 완료를 확인하고 3~5초로 짧게 말해 주세요. 한국어를 직접 선택하면 언어 감지 단계를 줄일 수 있습니다.'
+    : '기존 브라우저 인식이 실패하면 모드를 “Whisper · 기기에서 인식”으로 바꾸고 음성 인식 준비를 눌러 주세요.';
   $('transcript').value = transcript;
   if (results.speech.state === 'success' && results.analysis.state === 'success') {
     $('summary').textContent = '음성 → 텍스트 → 래빗 AI 응답을 확인했습니다. ③ 분석 결과의 가수·곡명이 맞는지 확인해 주세요.';
@@ -115,8 +170,8 @@ function onProbeState(controller, event) {
   } else if (event.state === 'received') {
     results[key].uncorrelatedResponses = (results[key].uncorrelatedResponses || 0) + 1;
     results[key].detail = '응답 수신 · 요청과 맞는 분석 결과를 기다립니다.';
-  } else if (['waiting', 'listening', 'recording', 'stopping'].includes(event.state)) {
-    const labels = { waiting: busy.kind === 'model' ? '래빗 응답 대기 중' : '입력 시작·권한 확인 중', listening: '말씀해 주세요 · 놓으면 종료', recording: '마이크 녹음 중 · 놓으면 종료', stopping: '입력 종료 · 결과 기다리는 중' };
+  } else if (['waiting', 'listening', 'recording', 'stopping', 'transcribing'].includes(event.state)) {
+    const labels = { waiting: busy.kind === 'model' ? '래빗 응답 대기 중' : '입력 시작·권한 확인 중', listening: '말씀해 주세요 · 놓으면 종료', recording: '마이크 녹음 중 · 놓으면 종료', stopping: '입력 종료 · 결과 기다리는 중', transcribing: 'Whisper가 기기 안에서 인식 중' };
     results[key].detail = labels[event.state];
     $('active-status').textContent = `${stageLabels[key]} · ${labels[event.state]}`;
   }
@@ -137,7 +192,7 @@ function beginRun(key, kind, source) {
 }
 function failure(key, cause) {
   const code = Object.prototype.hasOwnProperty.call(errors, cause?.code) ? cause.code : 'unknown';
-  const timedOut = ['timeout', 'rabbit_no_response', 'rabbit_unmatched_response', 'speech_start_timeout', 'speech_result_timeout'].includes(code);
+  const timedOut = ['timeout', 'local_model_timeout', 'local_transcription_timeout', 'microphone_timeout', 'stop_timeout', 'rabbit_no_response', 'rabbit_unmatched_response', 'speech_start_timeout', 'speech_result_timeout'].includes(code);
   Object.assign(results[key], { state: code === 'unsupported' ? 'unsupported' : timedOut ? 'timed-out' : 'error', code, detail: errors[code] || '완료하지 못했습니다. 다시 시도해 주세요.' });
 }
 function finishRun(run) {
@@ -167,20 +222,22 @@ async function startCapture(source) {
   const key = $('capture-mode').value === 'microphone' ? 'microphone' : 'speech';
   const run = beginRun(key, 'capture', source);
   if (!run) return;
+  run.engine = $('capture-mode').value;
   if (key === 'speech') {
     transcript = '';
     results.analysis = fresh();
     $('analysis-result').hidden = true;
     $('analysis-result').textContent = '';
     speechSelection = $('speech-language').value;
+    speechEngine = run.engine;
   }
   render();
   try {
-    const result = await (key === 'speech' ? speech.begin({ lang: speechSelection }) : microphone.begin());
+    const result = await (key === 'speech' ? (run.engine === 'local' ? local : speech).begin({ lang: speechSelection }) : microphone.begin());
     if (busy !== run) return;
     if (key === 'speech') {
       transcript = result.transcript;
-      Object.assign(results[key], { state: 'success', detail: `${transcript.length}자 인식 · ③을 눌러 분석`, outputChars: transcript.length });
+      Object.assign(results[key], { state: 'success', detail: `${transcript.length}자 인식${run.engine === 'local' ? ` · 언어 ${result.lang}` : ''} · ③을 눌러 분석`, outputChars: transcript.length, detectedLanguage: run.engine === 'local' ? result.lang : '' });
     } else {
       Object.assign(results[key], { state: 'success', detail: `${result.bytes}바이트 수집 · 오디오 폐기`, bytes: result.bytes, mimeType: result.mimeType });
     }
@@ -189,22 +246,19 @@ async function startCapture(source) {
 }
 function releaseCapture(source) {
   if (busy?.kind !== 'capture' || (source !== 'screen-stop' && busy.source !== source)) return;
-  (busy.key === 'speech' ? speech : microphone).release();
+  (busy.key === 'speech' ? busy.engine === 'local' ? local : speech : microphone).release();
 }
 function cancelAll() {
-  rabbit.cancel(); speech.cancel(); microphone.cancel();
+  rabbit.cancel(); speech.cancel(); microphone.cancel(); local.cancel();
   pointerId = null;
   keyHeld = false;
 }
 
 $('rabbit-text').addEventListener('click', () => runModel('rabbit', PROBE_TEST_TEXT));
+$('local-prepare').addEventListener('click', prepareLocal);
 $('rabbit-analyze').addEventListener('click', () => { if (transcript) runModel('analysis', transcript); });
 $('capture-mode').addEventListener('change', render);
-$('speech-language').addEventListener('change', () => {
-  $('language-note').textContent = $('speech-language').value === ''
-    ? '브라우저 기본 언어를 사용합니다. 자동 언어 감지를 켜는 옵션이 아닙니다. 원하는 언어가 인식되지 않으면 직접 선택해 주세요.'
-    : '선택한 언어로 인식합니다. 래빗 기본 음성 인식이나 다국어 자동 감지 지원을 확인하는 검사는 아닙니다.';
-});
+$('speech-language').addEventListener('change', render);
 const hold = $('capture-hold');
 hold.addEventListener('pointerdown', event => {
   if (event.button !== 0 || busy || pointerId !== null) return;
@@ -287,12 +341,12 @@ function report() {
   const tests = Object.fromEntries(Object.entries(results).map(([key, result]) => [key, {
     state: result.state, code: result.code, attempts: result.attempts, durationMs: result.durationMs,
     eventCounts: result.eventCounts, timeline: result.timeline,
-    outputChars: result.outputChars, ...(key === 'speech' ? { requestedLanguage: speechSelection || 'browser-default' } : {}),
+    outputChars: result.outputChars, ...(key === 'speech' ? { engine: speechEngine, requestedLanguage: speechSelection || (speechEngine === 'local' ? 'auto' : 'browser-default'), detectedLanguage: /^[a-z]{2,3}$/.test(result.detectedLanguage || '') ? result.detectedLanguage : '' } : {}),
     ...(key === 'microphone' && result.bytes ? { bytes: result.bytes, mimeType: /^audio\/[a-z0-9.+-]+(?:;codecs=[a-z0-9.+-]+)?$/i.test(result.mimeType) ? result.mimeType : 'unknown' } : {}),
     ...(result.uncorrelatedResponses ? { uncorrelatedResponses: result.uncorrelatedResponses } : {}),
   }]));
   return JSON.stringify({ version: VERSION, environment: safeEnvironment(), capabilities: capabilities(), inputCounts: counts, tests,
-    scope: 'Browser speech and Rabbit text AI only; native speech, language auto detection and music playback not verified.',
+    scope: 'Local Whisper or optional browser speech, and Rabbit text AI. No music playback in diagnostics. Actual device performance needs testing.',
     excludes: ['transcripts', 'artist', 'title', 'rawModelResponses', 'audio', 'accountData'] }, null, 2);
 }
 $('copy-report').addEventListener('click', async () => {

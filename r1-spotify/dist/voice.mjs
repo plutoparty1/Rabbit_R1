@@ -17,6 +17,47 @@ const serverMessages = {
 };
 const normalize = value => String(value || '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[\p{P}\p{Z}\s]/gu, '');
 
+// Keep public errors actionable without exposing model/runtime diagnostics.
+export function keylessVoiceMessage(error) {
+  const code = error?.code || error?.message;
+  if (['model_load_failed', 'local_model_timeout', 'local_worker_failed'].includes(code)) return '음성 모델을 준비하지 못했습니다. Wi-Fi를 확인하고 음성 인식 준비를 다시 눌러 주세요.';
+  if (code === 'local_not_ready') return '먼저 음성 인식 준비를 누르고 준비 완료를 기다려 주세요.';
+  if (code === 'local_transcription_timeout') return '이 기기의 음성 처리 시간이 초과되었습니다. 3~5초 정도로 짧게 말해 주세요.';
+  if (['decode_failed', 'invalid_audio', 'empty_audio', 'transcription_failed', 'no_speech'].includes(code)) return '녹음에서 말을 인식하지 못했습니다. 3~5초 정도로 가수와 곡명을 다시 말해 주세요.';
+  if (['audio_too_large', 'audio_too_long'].includes(code)) return '녹음이 너무 깁니다. 가수와 곡명만 짧게 말해 주세요.';
+  if (['rabbit_no_response', 'rabbit_unmatched_response', 'bridge_failed', 'invalid_response', 'invalid_text'].includes(code)) return '래빗 AI에서 곡 정보를 확인하지 못했습니다. 가수와 곡명을 다시 말해 주세요.';
+  if (code === 'unsupported') return '이 기기에서 음성 모델을 실행할 수 없습니다. 래빗 Creation에서 다시 열어 주세요.';
+  if (code === 'cancelled') return '음성 요청이 취소되었습니다.';
+  return '기기 내 음성 인식을 완료하지 못했습니다. 음성 인식 준비를 확인하고 다시 시도해 주세요.';
+}
+
+// Audio remains in LocalSpeechProbe. Only its transcript enters Rabbit's text bridge.
+export function createKeylessTranscriber(recognizer, rabbit) {
+  const cancelled = () => Object.assign(new Error('cancelled'), { code: 'cancelled' });
+  const cancel = () => { recognizer.cancel(); rabbit.cancel(); };
+  return {
+    get ready() { return recognizer.ready; },
+    get supported() { return recognizer.supported && rabbit.supported; },
+    get unavailableMessage() {
+      return !rabbit.supported ? '래빗 Creation에서 음성 검색을 열어 주세요.' : keylessVoiceMessage({ code: 'unsupported' });
+    },
+    cancel,
+    async recognize(blob, { signal, onTranscript = () => {} } = {}) {
+      if (signal?.aborted) throw cancelled();
+      signal?.addEventListener('abort', cancel, { once: true });
+      try {
+        const speech = await recognizer.transcribeBlob(blob, { lang: '' });
+        if (signal?.aborted) throw cancelled();
+        onTranscript(speech.transcript, speech.lang);
+        if (signal?.aborted) throw cancelled();
+        const song = await rabbit.request(speech.transcript);
+        if (signal?.aborted) throw cancelled();
+        return { transcript: speech.transcript, language: speech.lang, artist: song.artist, title: song.title };
+      } finally { signal?.removeEventListener('abort', cancel); }
+    },
+  };
+}
+
 // Keep version words (live/remix/remastered) and symbols: a near match needs a tap.
 export function exactVoiceTrack(tracks, request) {
   const title = normalize(request.title), artist = normalize(request.artist);
@@ -29,8 +70,8 @@ export class VoiceController {
   constructor({ client, onChange = () => {}, canStart = () => true, deviceId = () => undefined,
     mediaDevices = globalThis.navigator?.mediaDevices, Recorder = globalThis.MediaRecorder,
     fetcher = (...args) => globalThis.fetch(...args), setTimer = (...args) => setTimeout(...args), clearTimer = timer => clearTimeout(timer),
-    maxDuration = MAX_RECORDING_MS, maxBytes = MAX_AUDIO_BYTES } = {}) {
-    Object.assign(this, { client, onChange, canStart, deviceId, mediaDevices, Recorder, fetcher, setTimer, clearTimer, maxDuration, maxBytes });
+    maxDuration = MAX_RECORDING_MS, maxBytes = MAX_AUDIO_BYTES, transcriber = null } = {}) {
+    Object.assign(this, { client, onChange, canStart, deviceId, mediaDevices, Recorder, fetcher, setTimer, clearTimer, maxDuration, maxBytes, transcriber });
     this.session = null;
     this.state = { phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] };
   }
@@ -47,11 +88,13 @@ export class VoiceController {
     }
     this.stopTracks(session);
     session.chunks = [];
+    this.transcriber?.cancel?.();
   }
   cancel() {
     const previous = this.session;
     this.session = null;
     if (previous) this.cleanup(previous);
+    else this.transcriber?.cancel?.();
     this.update({ phase: 'idle', message: '버튼을 누른 채 말하고 놓으세요.', transcript: '', language: '', tracks: [] });
   }
   fail(session, message) {
@@ -77,9 +120,14 @@ export class VoiceController {
     this.update({ phase: 'preparing', message: '마이크를 준비하고 있습니다. 계속 눌러 주세요.', transcript: '', language: '', tracks: [] });
     try {
       if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('이 브라우저에서 녹음을 지원하지 않습니다. HTTPS와 마이크 권한을 확인해 주세요.');
-      const config = await this.request('/api/voice/config', {}, session, 10000);
-      if (!this.current(session)) return;
-      if (!config.enabled) throw new Error('음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.');
+      if (this.transcriber) {
+        if (!this.transcriber.supported) throw new Error(this.transcriber.unavailableMessage || '래빗 Creation에서 음성 검색을 열어 주세요.');
+        if (!this.transcriber.ready) throw new Error('먼저 음성 인식 준비를 누르고 준비 완료를 기다려 주세요.');
+      } else {
+        const config = await this.request('/api/voice/config', {}, session, 10000);
+        if (!this.current(session)) return;
+        if (!config.enabled) throw new Error('음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.');
+      }
       // Permissions can resolve after release; that stream must never start recording.
       session.timer = this.setTimer(() => this.fail(session, '마이크 권한을 허용한 뒤 화면의 말하기 버튼을 다시 눌러 주세요.'), 30000);
       const stream = await this.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true }, video: false });
@@ -127,16 +175,29 @@ export class VoiceController {
       session.chunks = [];
       if (!blob.size) throw new Error('녹음이 비어 있습니다. 버튼을 누른 채 말해 주세요.');
       if (blob.size > this.maxBytes) throw new Error('녹음 크기가 너무 큽니다. 더 짧게 말해 주세요.');
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      if (!this.current(session)) return;
-      let binary = '';
-      for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
-      const accessToken = await this.client.voiceAccessToken();
-      if (!this.current(session)) return;
-      const result = await this.request('/api/voice/search', {
-        method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
-        body: JSON.stringify({ audio: btoa(binary), mimeType: blob.type }),
-      }, session);
+      let result;
+      if (this.transcriber) {
+        this.update({ message: '기기에서 음성을 글자로 바꾸고 있습니다. 잠시 기다려 주세요.' });
+        try {
+          result = await this.transcriber.recognize(blob, {
+            signal: session.abort.signal,
+            onTranscript: (transcript, language) => {
+              if (this.current(session)) this.update({ phase: 'analyzing', message: '래빗 AI에서 가수와 곡명을 확인하고 있습니다.', transcript, language });
+            },
+          });
+        } catch (error) { throw new Error(keylessVoiceMessage(error)); }
+      } else {
+        const bytes = new Uint8Array(await blob.arrayBuffer());
+        if (!this.current(session)) return;
+        let binary = '';
+        for (let offset = 0; offset < bytes.length; offset += 8192) binary += String.fromCharCode(...bytes.subarray(offset, offset + 8192));
+        const accessToken = await this.client.voiceAccessToken();
+        if (!this.current(session)) return;
+        result = await this.request('/api/voice/search', {
+          method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ audio: btoa(binary), mimeType: blob.type }),
+        }, session);
+      }
       if (!this.current(session)) return;
       if (typeof result.title !== 'string' || !result.title.trim() || typeof result.transcript !== 'string') throw new Error('곡명을 알아듣지 못했습니다. 가수와 곡명을 다시 말해 주세요.');
       session.request = { title: result.title.trim(), artist: typeof result.artist === 'string' ? result.artist.trim() : '' };

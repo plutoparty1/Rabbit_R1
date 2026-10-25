@@ -21,7 +21,7 @@ See the artwork, track, artist, album and playback progress. Swipe to skip, pres
 | Capability | What you get |
 | --- | --- |
 | Hardware-first control | Side-button play/pause; wheel volume in 5% steps; artwork swipe for previous/next |
-| Multilingual voice requests | Hold the side button, say an artist and song, then release to search; requires voice service configuration and deployment |
+| Multilingual voice requests | On-device Whisper recognition → Rabbit text AI → Spotify search; no AI API key or running companion PC; r1 inference still needs testing |
 | Focused lyrics | Tap artwork to open lyrics; scroll with the wheel; follow the current line when timestamps exist |
 | Multiple lyric sources | Bugs first, then LRCLIB exact/search and lyrics.ovh fallback |
 | Session recovery | PKCE login, token refresh and on-device session restoration |
@@ -120,7 +120,7 @@ Spotify development-mode user and request limits apply to **each user's own Spot
 | Player | Swipe artwork left / right | Next / previous track |
 | Player | Press r1 side button once | Play / pause |
 | Player / Lyrics | Hold r1 side button, speak, then release | Record and search Spotify by artist and song; automatically play a unique exact match or choose a result |
-| Player | Voice search button | Open the voice panel; hold its recording button with touch, Space or Enter, and release to submit |
+| Player | Voice search button | Open the panel and prepare recognition first; hold the recording button with touch, Space or Enter, then release to search |
 | Player | Wheel up / down | Volume +5% / −5%, within 0–100%, if supported by the active device |
 | Player | Tap artwork | Open lyrics |
 | Lyrics | Wheel or touch scroll | Explore freely; turns off automatic following |
@@ -135,52 +135,43 @@ Tapping lyrics preserves follow mode. Checkbox interaction restarts the controls
 
 ### Test on r1 without an API key
 
-The [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html) needs **no Spotify login or Gemini key**. Open **Test rabbit voice without an API key** in the existing Creation's connection settings, or register the diagnostic URL as a Creation launch URL. Rabbit AI may be unavailable in a desktop or phone browser. The diagnostic UI is in Korean.
+The r25 default runs **Whisper on the device**, replacing the browser speech service that timed out on the reported r1. No AI API key or running companion PC is needed. On first use, allow about **65 MB of public model/runtime downloads** over the internet; later reuse depends on the WebView's cache. This is browser-based local inference, not access to Rabbit's native speech recognizer.
 
-1. Run **래빗 AI 연결 확인** to extract artist/title from a fixed example using Rabbit's text LLM channel.
-2. Select speech recognition and Korean, hold the side button, wait for the listening indicator, say **“아이유의 밤편지 틀어줘”**, then release. If you released while waiting for microphone permission, grant it and hold again. An on-screen hold button is also available.
-3. Check the transcript, then select **인식 문장 분석** to send it to Rabbit AI and inspect the artist/title.
-4. If recognition fails, try microphone-only recording to distinguish microphone access from recognition-service availability. Copy the report or share the displayed status/error codes.
+Open the [rabbit voice diagnostic page](https://r1-spotify-player-jjs1124.plutoparty.chatgpt.site/rabbit-test.html?v=20261025-r25-test) from **Test rabbit voice without an API key** in the Creation's connection settings. It needs **no Spotify login**. Check the `20261025-r25-test` label, then:
 
-Recognition here uses the Web Speech API; it does not establish access to Rabbit's native speech recognizer. Browser default means the browser's default language, **not guaranteed automatic language detection**. Test English, Japanese and default separately after Korean works. API presence alone is not a pass: a real transcript and successful Rabbit analysis of that transcript are needed to verify this keyless path on the tested device/language. Automatic multilingual recognition and end-to-end Spotify voice playback remain separate tests.
+1. Keep **Whisper · 기기에서 인식** selected and press **음성 인식 준비**. Wait for the ready indicator.
+2. Hold the on-screen button or the r1 side button, speak a short 3–5 second request, and release. If permission is requested, allow it and hold again.
+3. Wait for the transcript. **자동 감지 · Whisper** identifies the language; Korean, English or Japanese can also be selected explicitly.
+4. Check the words, then press **③ 인식 문장 분석** to test Rabbit's artist/title extraction. Copy the report if a stage fails.
 
-Speech may be sent to the browser vendor's recognition service. Only an explicit button press sends the example or recognized text to Rabbit; speaker output and journal logging are not requested. Microphone-only mode discards audio and records only byte count and format. Copied reports exclude spoken text, raw AI replies and credentials. Cancel/page exit stops capture and invalidates late results; an already dispatched Rabbit server request cannot be recalled.
+The diagnostic keeps transcription and Rabbit analysis separate. Audio is processed locally; only the explicit analysis button sends the transcript to Rabbit. **① 래빗 AI 연결 확인** independently tests a fixed example and does not prove speech recognition works. Microphone-only mode discards the recording after measuring bytes. Optional browser speech mode remains for comparison and may use the browser vendor's service; its browser-default language option is not automatic detection. Copied reports exclude spoken text, raw AI replies and credentials.
 
-Diagnostic version: `20261025-r24-test`. It uses the [documented Rabbit SDK](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) text LLM channel, without guessing undocumented native audio APIs. An r23 device trial reported a timeout and a listening indicator, but no final transcript or per-stage report was available to establish the failing stage. Automated checks simulate speech and Rabbit replies; they do not establish device success.
+The user reported Rabbit AI connection success, a Web Speech timeout and a 20,262-byte microphone recording. A byte count proves recording output, not intelligible speech. Actual-model tests in desktop Edge succeeded for English and Korean language detection, but the Korean song name was transcribed incorrectly. **Local Whisper speed, accuracy and the complete playback flow on r1 remain unverified.** See the [verification record](docs/local-voice-verification.md).
 
-After a timeout, check the new version label and retry with the **on-screen hold button** to compare against the physical side button. Recognition now captures one utterance at a time. A recognizer start event alone does not prove microphone input, detected speech or a transcript; the screen and report distinguish these events. Stage ③ cannot run without a final transcript. If recognition still fails, try **microphone recording only**, then share the stage, error code and last observed event, or copy the diagnostic report. Additional report fields contain only event names, counts and elapsed times.
+### Request songs in the player
 
-| Error code | Observed condition |
+1. Sign in to Spotify, start playback on another device with the same account, and open **Voice search** on r1.
+2. Select **Prepare voice recognition** and wait until ready. Hold the side or recording button, say an artist and song, then release.
+3. Local Whisper detects the language and transcribes; Rabbit's text AI extracts artist/title; the browser searches Spotify. A unique exact title-and-artist match plays automatically; otherwise, choose from up to five candidates.
+
+Try **“아이유의 밤편지 틀어줘”** or **“Play Yesterday by The Beatles.”** The model is instructed to transcribe rather than translate. Small models can mishear names, short utterances and mixed-language requests; inspect the displayed text and candidates. Recording is limited to 15 seconds and 2 MiB. Cancel, hide/page exit, screen changes or disconnect invalidate pending work. A dispatched Rabbit server request cannot be recalled.
+
+Spotify Client ID, login, Premium and an active playback device are still required for playback. No Gemini secret or server voice allowlist is required by this default flow. If an older login lacks search permission, reconnect once to grant `user-read-private`; refreshing a token cannot add permissions. See [Spotify's scopes](https://developer.spotify.com/documentation/web-api/concepts/scopes). Button events and the [Rabbit text bridge](https://github.com/rabbit-hmi-oss/creations-sdk/blob/main/plugin-demo/reference/creation-triggers.md) require the open Creation; ordinary browsers may not provide the bridge. Music continues on the Spotify playback device.
+
+| Error code | Action |
 | --- | --- |
-| `speech_start_timeout` | No recognition start event within 15 seconds |
-| `speech_result_timeout` | No final transcript or end event within 8 seconds after requesting stop |
-| `speech_interim_only` | Interim text arrived, but no final transcript was received |
-| `rabbit_no_response` | No Rabbit callback within 45 seconds |
-| `rabbit_unmatched_response` | A callback arrived, but no analysis matching the current request was found |
+| `model_load_failed` / `local_model_timeout` | Check connectivity and press preparation again; first use downloads model/runtime files |
+| `local_worker_failed` | Prepare again; the WebView may have stopped the worker |
+| `local_transcription_timeout` | Retry with a 3–5 second phrase; selecting Korean explicitly skips language detection in diagnostics |
+| `rabbit_no_response` / `rabbit_unmatched_response` | Share the diagnostic report; text analysis did not produce a matching response |
 
-Rabbit replies are checked in both documented `data` and `message` fields. Request ID matching remains required so a late reply from an earlier request cannot pass a new test. These timeout and diagnostic changes do not establish that a device's speech service issue has been resolved.
-
-### Request songs with server speech recognition
-
-The source includes push-to-talk search for the open Creation's player and lyrics screens. It needs a configured voice backend and an updated deployment; a GitHub update alone does not enable it on the public app. Existing playback controls work without voice configuration. Recording and the full recognition-to-playback flow still need verification on a real r1.
-
-**Already signed in before this update? Reconnect and sign in once** to grant the added `user-read-private` permission used by Spotify search and `/v1/me` identity verification. Refreshing an existing token cannot add OAuth permissions. See [Spotify's scope reference](https://developer.spotify.com/documentation/web-api/concepts/scopes).
-
-1. Sign in to Spotify, start playback on your phone, computer or speaker, and open the player or lyrics screen on r1.
-2. Hold the side button and allow microphone access when prompted. Speak after the recording indicator appears, then release the button. If you released while permission was pending, hold again after allowing access.
-3. The app sends the recording for language detection and song extraction, then searches Spotify. One exact title-and-artist match plays automatically; otherwise, choose from up to five candidates.
-
-Example requests: **“아이유의 밤편지 틀어줘”**, **“Play Yesterday by The Beatles”**, or **“테일러 스위프트의 Cruel Summer 틀어줘.”** No language selector is required. The voice service keeps song and artist names in their spoken form instead of translating them. Short utterances, pronunciation, aliases and mixed-language names can still produce a wrong transcription or multiple results; check the displayed candidates when a match is uncertain.
-
-The player's **Voice search** button opens the same panel. Hold its recording button by touch or with Space/Enter, then release to submit. Recording automatically submits at 15 seconds; a recording over 2 MiB is rejected. Cancelling, hiding or leaving the app, changing screens, or disconnecting cancels pending voice work.
-
-Only an open Creation receives these button events. Voice requests control the active Spotify device and do not stream music through r1. The operator must enable voice access for your Spotify user ID separately from your Spotify developer app's user access.
+Implementation: [Transformers.js](https://huggingface.co/docs/transformers.js/v3.8.1/en/pipelines) **3.8.1**, multilingual `Xenova/whisper-tiny` q8 at revision `5332fcc35e32a33b86612b9a57a89be7906102b1`, single-thread WASM in a Web Worker. The app explicitly performs language classification because this library version otherwise defaults to English. [ONNX Runtime lists Android Chrome/Edge WASM support](https://onnxruntime.ai/docs/get-started/with-javascript/web.html#supported-versions); this does not certify the r1 WebView.
 
 ## How it works
 
 ![Device, Spotify playback and lyrics data flow](docs/assets/architecture.svg)
 
-The browser calls Spotify directly for authentication, search and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. The optional voice endpoint verifies the caller with Spotify, then sends recorded audio to Gemini for transcription, language detection and artist/title extraction. Spotify search and playback remain in the browser. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
+The browser calls Spotify directly for authentication, search and playback control. A same-origin Worker serves the UI and the Bugs lyrics endpoint. Default voice requests use local Whisper, then send the transcript to Rabbit's text AI for artist/title extraction. The retained Gemini server endpoint is an optional developer integration and is not called by the default player. LRCLIB and lyrics.ovh are browser fallbacks. This project controls an existing Spotify player; it does not stream audio to r1.
 
 ### Lyrics lookup
 
@@ -221,11 +212,11 @@ node scripts/build.mjs
 npx wrangler dev --config wrangler.jsonc --port 8791
 ```
 
-The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI and server modules into the Worker. Other hosting must support the same module Worker interface, `/api/lyrics/bugs` and, when enabled, `POST /api/voice/search`.
+The local address is for development. Use your deployed HTTPS URL for r1 installation and actual Spotify login. Rebuild after frontend edits. The build bundles the existing `dist` UI and server modules into the Worker. Other hosting must support the same module Worker interface and `/api/lyrics/bugs`. Preserve the voice page/worker Content Security Policy: WASM compilation, jsDelivr runtime downloads and Hugging Face model downloads must be allowed.
 
-### Enable voice requests
+### Optional legacy Gemini backend — developers only
 
-Configure the following on the deployment's server, then rebuild and deploy the updated source. Users do not enter a Gemini key on r1. Keep the existing Sites hosting when updating the public instance; the Wrangler commands above apply only to an independently hosted fork.
+The server speech module remains for developers who deliberately integrate it in a fork. **The r25 default player uses local Whisper and does not call `/api/voice/config` or `/api/voice/search`. Setting these secrets alone does not switch the player back to Gemini.** No settings below are needed for the default flow. A custom caller must use the authenticated `POST /api/voice/search` contract and disclose the audio upload. Keep the existing Sites hosting when updating the public instance; Wrangler instructions apply only to an independently hosted fork.
 
 | Server setting | Purpose |
 | --- | --- |
@@ -235,7 +226,7 @@ Configure the following on the deployment's server, then rebuild and deploy the 
 
 For an independent Wrangler deployment, set the API key with `npx wrangler secret put GEMINI_API_KEY --config wrangler.jsonc`. Add `VOICE_ALLOWED_SPOTIFY_USERS` and an optional `VOICE_MODEL` to the deployment's environment variables. For local development, use an untracked `.dev.vars` file with those same names. Do not commit real keys or user IDs.
 
-The voice endpoint accepts the current Spotify access token in the Authorization header, verifies it against Spotify's `/v1/me`, and checks the user ID against the server allowlist before calling Gemini. It does not accept anonymous voice requests. `GET /api/voice/config` reports whether the required server settings are present; it does not test provider credentials. Missing voice configuration leaves basic playback available and causes voice requests to report that the service is unavailable.
+This optional endpoint accepts the current Spotify access token in the Authorization header, verifies it against Spotify's `/v1/me`, and checks the user ID against the server allowlist before calling Gemini. It does not accept anonymous requests. `GET /api/voice/config` reports whether its required server settings are present; it does not test provider credentials. Missing Gemini configuration does not disable the default local voice flow.
 
 Each Spotify identity is limited to 6 requests per minute, 60 per hour, and one active request **per warm Worker isolate**. These in-memory limits are not global quotas across instances or restarts. Configure provider spending/usage limits or a shared gateway quota for broader deployments. Spotify verification has an 8-second timeout and Gemini a 25-second timeout; paid inference is not automatically retried. The endpoint accepts at most 2 MiB of decoded audio in a 3 MiB JSON request. Audio formats include WebM, Ogg, WAV, MP3/MPEG, AAC, FLAC, M4A and Opus; MP4 audio is normalized to M4A for the provider.
 
@@ -255,13 +246,15 @@ The hosted app controls playback using each user's own Client ID and Spotify log
 
 | Data | Handling |
 | --- | --- |
-| Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage. Voice requests temporarily send the access token to the site server for Spotify identity verification; the server does not persist it. Refresh tokens stay on the device and are sent only to Spotify |
+| Access and refresh tokens | My device: native secure storage plus IndexedDB; Shared device: page memory only; not localStorage. Default voice requests do not send Spotify tokens to Rabbit or the voice server. Only a custom legacy backend caller sends an access token for Spotify identity verification. Refresh tokens are sent only to Spotify |
 | Pending OAuth transaction | My device: localStorage; Shared device: same-tab sessionStorage; 10-minute expiry, one-time state and PKCE verifier; removed on completion, disconnect or expiry checks |
 | Client ID | Public identifier only; localStorage for My device, same-tab sessionStorage for Shared device |
 | Phone setup relay | Public Client ID, receiver-proof hash and expiry temporarily in Sites storage; no Spotify credentials. Received/cancelled sessions are deleted. Expired sessions cannot be used and abandoned records are pruned during new-session creation. |
 | Bugs request | Track title, artist, album and duration only; no Spotify token |
 | Other lyrics requests | Track metadata sent to the selected provider; no Spotify credentials |
-| Voice request | Audio is sent to the site server and Gemini; Spotify credentials are not sent to Gemini. The app does not persist or log recordings or transcripts. Provider processing and retention are governed by the operator's Gemini service settings and terms |
+| Default voice request | Audio is decoded and transcribed on the device, without an audio upload. The transcript is sent to Rabbit text AI and extracted artist/title to Spotify. The app does not persist or log recordings/transcripts; it requests neither Rabbit spoken output nor journal logging |
+| Model/runtime downloads | Public files from jsDelivr and Hugging Face; no AI API key. Browser caching may retain model files; it does not store recordings |
+| Optional legacy Gemini caller | If a developer explicitly integrates it, audio goes to the site server and Gemini; Spotify credentials do not go to Gemini. Provider processing/retention follows the operator's service settings and terms |
 
 IndexedDB is browser storage, not a hardware-encrypted vault. The backup remains because a native storage success response may not guarantee persistence. Secure storage initialization is retried for a bounded time; persistent storage must be confirmed before the app reports that login will survive reopening.
 
@@ -281,7 +274,9 @@ Disconnect removes saved credentials and records a logout marker to block restor
 | Login is lost after reopening | Inspect storage diagnostics; reconnect if storage was cleared, blocked or authorization revoked |
 | Rate limited / offline | The app respects Retry-After and labels last-known data; avoid repeated manual commands |
 | Old or cropped UI after returning | Check the displayed version and viewport in diagnostics; compare deployment assets with source |
-| Voice service unavailable / access denied | Operator must deploy the updated code, configure the Gemini secret and allowlist your Spotify user ID; refresh the Spotify login if its access token expired |
+| Voice model not ready / download failed | Press preparation and wait; check internet access to jsDelivr/Hugging Face. Reloading may require preparation again |
+| Recognition times out on r1 | Use local Whisper, try a short 3–5 second phrase and share the stage/error code; r1 local inference performance is not yet established |
+| Rabbit AI unavailable | Open the app as a Rabbit Creation; the text bridge may be absent in an ordinary browser |
 | Existing login needs search permission | Reconnect and sign in once to grant `user-read-private`; token refresh alone does not add this permission |
 | Microphone denied or unsupported | Allow microphone access and use an HTTPS URL; check the current r1 WebView's recording support |
 | Voice request finds the wrong song or multiple songs | Say both artist and title clearly, then inspect the candidate list; proper names and language detection can be misrecognized |
@@ -323,10 +318,12 @@ Node tests cover core logic, OAuth, Spotify, lyric matching, Bugs, voice recordi
 | Node suite | Reproducible automated logic checks; does not prove hardware behavior |
 | Recorded browser scenarios | 240×282 and smaller viewports, gestures, wheel, follow controls, authentication recovery, volume and resume |
 | r22 voice browser scenarios | English/Korean Edge at 240×282 and 240×240: automatic playback, candidate selection, cancellation, errors and unconfigured service; microphone, recognition and Spotify responses are mocked |
+| r25 actual-model browser test | Desktop Edge WASM: Korean/English language detection and transcription; Korean song name incorrect. No r1 speed/accuracy or real Spotify playback claim. [Record](docs/local-voice-verification.md) |
+| User's r1 diagnostic report | Rabbit AI connection succeeded, browser speech timed out, microphone produced 20,262 bytes; no local Whisper device result yet |
 | Historical r6 user report | Login retention, wheel input, manual/follow lyrics and visible playback buttons |
-| Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; real r1 microphone permissions/recording, live multilingual recognition and voice-triggered Spotify playback |
+| Pending | Latest WebView end-to-end behavior, r7 tap controls on hardware, full multi-user sharing flow and device-specific volume; r1 recording decode, local Whisper speed/accuracy and voice-triggered Spotify playback |
 
-The source UI identifies itself as `20261025-r24`. Check your own deployed version in device diagnostics. The voice feature's source update does not confirm a live-host deployment or a successful real-device/provider test. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
+The source UI identifies itself as `20261025-r25`. Check your deployed version in device diagnostics. The [local voice verification record](docs/local-voice-verification.md) distinguishes user reports, actual-model desktop checks and pending r1 tests. [verification.json](docs/verification.json) is historical evidence dated 2026-10-08, not a new certification. Detailed Korean implementation and test notes are preserved in the [original documentation archive](docs/archive/README.2026-10-18.ko.md).
 
 ## License
 

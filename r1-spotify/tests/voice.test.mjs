@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS } from '../dist/voice.mjs';
+import { VoiceController, exactVoiceTrack, MAX_RECORDING_MS, createKeylessTranscriber } from '../dist/voice.mjs';
 
 const tick = () => new Promise(resolve => setImmediate(resolve));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
@@ -152,4 +152,65 @@ test('a playback failure is shown and never retried automatically', async () => 
   const f = fixture({ client: { playTrack: async () => { plays++; throw new Error('Spotify 앱에서 곡을 먼저 재생해 주세요.'); } } });
   await submit(f); assert.equal(plays, 1); assert.equal(f.controller.state.phase, 'error');
   assert.equal(f.timers.size, 0); assert.equal(f.controller.active, false);
+});
+
+function keylessFixture(options = {}) {
+  const calls = [];
+  const recognizer = { ready: true, supported: true,
+    async transcribeBlob(blob, options) { calls.push(['audio', blob, options]); return { transcript: '아이유의 밤편지 틀어줘', lang: 'ko' }; },
+    cancel() { calls.push(['cancel-local']); }, ...options.recognizer,
+  };
+  const rabbit = { supported: true,
+    async request(text) { calls.push(['text', text]); return { artist: '아이유', title: '밤편지' }; },
+    cancel() { calls.push(['cancel-rabbit']); }, ...options.rabbit,
+  };
+  const transcriber = createKeylessTranscriber(recognizer, rabbit);
+  return { ...fixture({ controller: { transcriber }, ...options.fixture }), localCalls: calls, recognizer, rabbit };
+}
+
+test('keyless route transcribes locally and sends only text to Rabbit before Spotify; never checks server config or uploads audio', async () => {
+  const f = keylessFixture(); await submit(f);
+  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.localCalls.filter(call => call[0] === 'audio').length, 1);
+  assert.deepEqual(f.localCalls.find(call => call[0] === 'audio')[2], { lang: '' });
+  assert.deepEqual(f.localCalls.find(call => call[0] === 'text'), ['text', '아이유의 밤편지 틀어줘']);
+  assert.equal(f.calls.some(call => call === 'token' || call[0]?.startsWith('/api/voice')), false);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+  assert.equal(f.controller.state.language, 'ko');
+});
+
+test('keyless route requires a ready model and Rabbit bridge before microphone capture', async () => {
+  for (const options of [{ recognizer: { ready: false } }, { rabbit: { supported: false } }]) {
+    const f = keylessFixture(options); await f.controller.begin();
+    assert.equal(f.controller.state.phase, 'error'); assert.equal(f.captures(), 0);
+    assert.equal(f.calls.length, 0); assert.equal(f.timers.size, 0);
+    assert.match(f.controller.state.message, options.recognizer ? /음성 인식 준비/ : /Creation/);
+  }
+});
+
+test('cancel during local transcription rejects a late result before calling Rabbit or Spotify', async () => {
+  const result = deferred();
+  const f = keylessFixture({ recognizer: { transcribeBlob: () => result.promise } });
+  await f.controller.begin(); f.controller.release(); await tick();
+  f.controller.cancel(); result.resolve({ transcript: 'late', lang: 'en' }); await tick(); await tick();
+  assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
+  assert.ok(f.localCalls.some(call => call[0] === 'cancel-local'));
+  assert.ok(f.localCalls.some(call => call[0] === 'cancel-rabbit'));
+  assert.equal(f.calls.length, 0); assert.equal(f.controller.state.phase, 'idle');
+});
+
+test('cancel during Rabbit analysis prevents later Spotify search and playback', async () => {
+  const result = deferred();
+  const f = keylessFixture({ rabbit: { request: () => result.promise } });
+  await f.controller.begin(); f.controller.release(); await tick(); await tick();
+  assert.equal(f.controller.state.phase, 'analyzing');
+  f.controller.cancel(); result.resolve({ artist: '아이유', title: '밤편지' }); await tick();
+  assert.equal(f.calls.length, 0); assert.equal(f.controller.state.phase, 'idle');
+});
+
+test('local model failure is actionable and never falls back to paid transcription', async () => {
+  const f = keylessFixture({ recognizer: { async transcribeBlob() { throw Object.assign(new Error('runtime details'), { code: 'local_transcription_timeout' }); } } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'error'); assert.match(f.controller.state.message, /3~5초/);
+  assert.equal(f.calls.length, 0); assert.equal(f.localCalls.some(call => call[0] === 'text'), false);
 });

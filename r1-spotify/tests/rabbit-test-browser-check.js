@@ -1,6 +1,7 @@
 // Playwright callback using simulated native bridge/speech/microphone. No real device claims.
 async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
   const context = await page.context().browser().newContext({ locale: 'ko-KR', viewport: { width: 240, height: 282 } });
+  let localContext;
   const errors = [], external = [];
   const check = (value, message) => { if (!value) throw Error(message); };
   try {
@@ -12,6 +13,8 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     tab.on('pageerror', error => errors.push(error.message));
     tab.on('request', request => { if (!request.url().startsWith(baseURL + '/')) external.push(request.url()); });
     await tab.goto(baseURL + '/rabbit-test.html');
+    await tab.locator('#capture-mode').selectOption('speech');
+    await tab.locator('#speech-language').selectOption('ko-KR');
     await tab.locator('#rabbit-text').click();
     await tab.locator('#rabbit-status[data-state="unsupported"]').waitFor();
     // Bridge and Web Speech may be injected after the page was loaded.
@@ -135,14 +138,140 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     check(!unmatchedText.includes('secret-') && !unmatchedText.includes('wrong-request') && !unmatchedText.includes('아이유'), 'Failure report exposes response contents');
     const stageSummary = await tab.locator('#stage-results').innerText();
     check(['① 래빗 AI', '② 음성', '② 마이크', '③ 문장 분석', 'rabbit_unmatched_response', 'no_speech'].every(label => stageSummary.includes(label)), 'Copy-free summary lacks stage results/codes');
-    check((await tab.locator('.intro').innerText()).includes('20261025-r24-test'), 'Current version not visible near intro');
+    check((await tab.locator('.intro').innerText()).includes('20261025-r25-test'), 'Current version not visible near intro');
     if (screenshotDir) {
       await tab.setViewportSize({ width: 240, height: 282 });
       await tab.evaluate(() => window.scrollTo(0, 0));
       await tab.screenshot({ path: screenshotDir + '/rabbit-test-240x282.png' });
     }
+
+    // Exercise the real LocalSpeechProbe and a real dedicated Worker. Only the
+    // worker's model implementation, microphone, and audio decoder are simulated.
+    localContext = await page.context().browser().newContext({ locale: 'ko-KR', viewport: { width: 240, height: 282 } });
+    await localContext.route('**/local-asr-worker.mjs*', route => route.fulfill({
+      contentType: 'text/javascript', body: `
+        self.onmessage = ({ data }) => {
+          const { id, type } = data;
+          if (type === 'load') {
+            setTimeout(() => self.postMessage({ id, type: 'progress', progress: { status: 'progress', loaded: 25, total: 100, progress: 25 } }), 180);
+            setTimeout(() => self.postMessage({ id, type: 'ready' }), 500);
+          } else if (type === 'transcribe') {
+            if (!(data.audio instanceof Float32Array) || data.audio.length !== 16000 || data.language !== '') {
+              self.postMessage({ id, type: 'error', code: 'invalid_audio' }); return;
+            }
+            if (!data.hold) setTimeout(() => self.postMessage({ id, type: 'result', text: '아이유의 밤편지 틀어줘', language: 'ko' }), 40);
+          }
+        };`,
+    }));
+    await localContext.addInitScript(() => {
+      window.localCaptures = 0; window.localTrackStops = 0; window.localContextCloses = 0;
+      window.localWorkers = []; window.localWorkerMessages = []; window.localTerminations = 0;
+      window.localHoldTranscription = false; window.localSent = [];
+      const NativeWorker = window.Worker;
+      window.Worker = class extends NativeWorker {
+        constructor(url, options) { super(url, options); window.localWorkers.push(this); }
+        postMessage(data, transfer) {
+          window.localWorkerMessages.push({ id: data.id, type: data.type, samples: data.audio?.length || 0, language: data.language });
+          super.postMessage({ ...data, hold: window.localHoldTranscription }, transfer);
+        }
+        terminate() { window.localTerminations++; super.terminate(); }
+      };
+      window.AudioContext = class {
+        decodeAudioData() { return Promise.resolve({ sampleRate: 48000, length: 48000, numberOfChannels: 1, getChannelData: () => new Float32Array(48000).fill(0.25) }); }
+        close() { window.localContextCloses++; return Promise.resolve(); }
+      };
+      window.MediaRecorder = class {
+        static isTypeSupported(type) { return type === 'audio/webm'; }
+        constructor(stream, options) { this.state = 'inactive'; this.mimeType = options.mimeType; }
+        start() { this.state = 'recording'; }
+        stop() {
+          this.state = 'inactive';
+          queueMicrotask(() => { this.ondataavailable?.({ data: new Blob([new Uint8Array(20262)], { type: 'audio/webm' }) }); this.onstop?.(); });
+        }
+      };
+      Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: {
+        getUserMedia: async () => {
+          window.localCaptures++;
+          return { getTracks: () => [{ stop() { window.localTrackStops++; } }] };
+        },
+      } });
+      window.PluginMessageHandler = { postMessage(value) {
+        const payload = JSON.parse(value); window.localSent.push(payload);
+        const request = JSON.parse(payload.message.split('Request: ')[1]);
+        setTimeout(() => window.onPluginMessage({ data: JSON.stringify({ requestId: request.requestId, artist: '아이유', title: '밤편지', language: 'ko' }) }), 20);
+      } };
+    });
+    const localTab = await localContext.newPage();
+    localTab.on('pageerror', error => errors.push(error.message));
+    localTab.on('request', request => { if (!request.url().startsWith(baseURL + '/')) external.push(request.url()); });
+    await localTab.goto(baseURL + '/rabbit-test.html');
+    check(await localTab.locator('#capture-mode').inputValue() === 'local', 'Local Whisper is not the default');
+    check(await localTab.locator('#speech-language').inputValue() === '', 'Whisper automatic language detection is not the default');
+    check(await localTab.locator('#capture-hold').isDisabled(), 'Recording enabled before local model preparation');
+    check(await localTab.locator('#local-prepare').isEnabled(), 'Local preparation is unavailable');
+    check(await localTab.evaluate(() => localCaptures === 0 && localWorkers.length === 0), 'Page load started model or microphone');
+    await localTab.locator('#local-prepare').click();
+    await localTab.waitForFunction(() => document.querySelector('#model-status').textContent.includes('25%'));
+    check(await localTab.evaluate(() => localCaptures === 0 && localContextCloses === 0), 'Model preload opened microphone or audio context');
+    check(await localTab.locator('#capture-hold').isDisabled(), 'Recording enabled during model download');
+    await localTab.locator('#model-status[data-state="success"]').waitFor();
+    check(await localTab.locator('#capture-hold').isEnabled(), 'Recording unavailable after local preparation');
+    check((await localTab.locator('#local-prepare').innerText()).includes('준비 완료'), 'Ready state not visible');
+    for (const height of [282, 240]) {
+      await localTab.setViewportSize({ width: 240, height });
+      await localTab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      await localTab.waitForFunction(() => document.querySelector('#active-status').textContent.includes('녹음 중'));
+      const dock = await localTab.locator('#active-controls').boundingBox();
+      check(dock.y >= 0 && dock.y + dock.height <= height + 1, 'Local recording controls clipped');
+      check(await localTab.evaluate(() => document.documentElement.scrollWidth === 240), 'Local mode has horizontal overflow');
+      check(await localTab.locator('#capture-release').isVisible() && await localTab.locator('#cancel-test').isVisible(), 'Local recording controls not available');
+      await localTab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+      await localTab.locator('#speech-status[data-state="success"]').waitFor();
+      check(await localTab.locator('#transcript').inputValue() === '아이유의 밤편지 틀어줘', 'Local transcript not shown');
+      check((await localTab.locator('#speech-status').innerText()).includes('언어 ko'), 'Detected language not shown');
+      check(await localTab.locator('#rabbit-analyze').isEnabled(), 'Local transcript did not enable stage 3');
+      check(await localTab.evaluate(() => localSent.length === 0), 'Local speech release automatically contacted Rabbit AI');
+    }
+    check(await localTab.evaluate(() => localTrackStops === 2 && localContextCloses === 2), 'Successful local capture did not release audio resources');
+    await localTab.locator('#rabbit-analyze').click();
+    await localTab.locator('#analysis-status[data-state="success"]').waitFor();
+    check(await localTab.evaluate(() => localSent.length === 1), 'Explicit local analysis did not call Rabbit AI once');
+    await localTab.locator('#copy-report').click();
+    const localReportText = await localTab.locator('#report').inputValue(), localReport = JSON.parse(localReportText);
+    check(localReport.capabilities.localWhisperReady === true && localReport.tests.model.state === 'success', 'Prepared local model absent from safe report');
+    check(localReport.tests.speech.engine === 'local' && localReport.tests.speech.requestedLanguage === 'auto' && localReport.tests.speech.detectedLanguage === 'ko', 'Local report language metadata incorrect');
+    check(localReport.tests.speech.eventCounts['local-recording'] === 1 && localReport.tests.speech.eventCounts['local-transcribing'] === 1 && localReport.tests.speech.eventCounts['local-result'] === 1, 'Local lifecycle signals missing');
+    check(!localReportText.includes('아이유') && !localReportText.includes('밤편지') && !localReportText.includes('틀어줘'), 'Local report leaks transcript or AI contents');
+    // Cancelling in-flight inference must actually terminate CPU work, invalidate
+    // readiness, and require explicit preparation before recording again.
+    await localTab.evaluate(() => { window.localHoldTranscription = true; window.dispatchEvent(new Event('longPressStart')); });
+    await localTab.waitForFunction(() => document.querySelector('#active-status').textContent.includes('녹음 중'));
+    await localTab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+    await localTab.waitForFunction(() => window.localWorkerMessages.filter(message => message.type === 'transcribe').length === 3);
+    await localTab.locator('#cancel-test').click();
+    await localTab.locator('#active-controls').waitFor({ state: 'hidden' });
+    check(await localTab.evaluate(() => localTerminations === 1 && localTrackStops === 3), 'Local inference cancellation leaked worker or microphone');
+    check(await localTab.locator('#capture-hold').isDisabled() && await localTab.locator('#local-prepare').isEnabled(), 'Cancellation did not require model re-preparation');
+    check(await localTab.locator('#rabbit-analyze').isDisabled(), 'Cancelled inference kept a stale transcript available');
+    await localTab.locator('#copy-report').click();
+    const cancelledLocal = JSON.parse(await localTab.locator('#report').inputValue());
+    check(cancelledLocal.capabilities.localWhisperReady === false && cancelledLocal.tests.speech.code === 'cancelled', 'Safe report falsely claims local readiness after cancellation');
+    await localTab.evaluate(() => { window.localHoldTranscription = false; });
+    await localTab.locator('#local-prepare').click();
+    await localTab.locator('#model-status[data-state="success"]').waitFor();
+    await localTab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+    await localTab.waitForFunction(() => document.querySelector('#active-status').textContent.includes('녹음 중'));
+    await localTab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    await localTab.locator('#active-controls').waitFor({ state: 'hidden' });
+    check(await localTab.evaluate(() => localTrackStops === 4 && localContextCloses === 4), 'Page exit leaked local recording resources');
+    check(await localTab.evaluate(() => localSent.length === 1 && localWorkerMessages.filter(message => message.type === 'transcribe').length === 3), 'Page exit submitted cancelled local audio');
+    if (screenshotDir) {
+      await localTab.setViewportSize({ width: 240, height: 282 });
+      await localTab.locator('#speech-title').scrollIntoViewIfNeeded();
+      await localTab.screenshot({ path: screenshotDir + '/rabbit-local-test-240x282.png' });
+    }
     check(errors.length === 0, 'Page errors: ' + errors.join('; '));
     check(external.length === 0, 'Unexpected external requests: ' + external.join('; '));
-    return { passed: true, lateBridge: true, keylessStages: true, reportRedacted: true, microphoneReleased: true, stageTimeouts: true, speechEvidenceOnly: true, boundedTrace: true, unmatchedReply: true, viewports: ['240x282', '240x240'], externalRequests: external.length, realRabbit: false };
-  } finally { await context.close(); }
+    return { passed: true, lateBridge: true, keylessStages: true, reportRedacted: true, microphoneReleased: true, stageTimeouts: true, speechEvidenceOnly: true, boundedTrace: true, unmatchedReply: true, localWhisper: true, localPreloadGated: true, localCancellation: true, viewports: ['240x282', '240x240'], externalRequests: external.length, realRabbit: false };
+  } finally { await localContext?.close(); await context.close(); }
 }

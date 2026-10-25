@@ -1086,3 +1086,5 @@ header #voice-open{margin-left:auto;font-size:11px;padding:0 7px;color:#9feab9}
 #voice-panel[data-phase="error"] #voice-state{color:#ffb0a4}
 #voice-results button{display:block;min-height:48px;width:100%;text-align:left;border:1px solid #536159;padding:6px 8px;margin:8px 0;font-size:12px;overflow-wrap:anywhere}
 #voice-results strong,#voice-results span{display:block}#voice-results span{font-size:11px;color:#a6b5ab}
+#voice-prepare { width: 100%; min-height: 44px; border: 1px solid #536159; padding: 6px 8px; }
+#voice-model-status { font-size: 12px; margin: 6px 0; }

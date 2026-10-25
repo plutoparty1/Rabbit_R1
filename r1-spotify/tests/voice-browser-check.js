@@ -5,7 +5,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
   for (const locale of ['ko-KR', 'en-US']) {
     const context = await browser.newContext({ locale, viewport: { width: 240, height: 282 } });
     const errors = [], playback = [], uploads = [];
-    let exact = true, configured = true, providerError = false;
+    let exact = true;
     const uri = 'spotify:track:' + 'a'.repeat(22);
     const track = { uri, id: 'a'.repeat(22), name: '밤편지', type: 'track', duration_ms: 180000,
       artists: [{ name: '아이유' }], album: { name: 'Palette', images: [] } };
@@ -14,6 +14,14 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await context.addInitScript(() => {
         sessionStorage.setItem('r1_spotify_tokens_v1', JSON.stringify({ access_token: 'fake-access', refresh_token: 'fake-refresh', clientId: 'a'.repeat(32), expiresAt: Date.now() + 3600000 }));
         window.micCalls = 0; window.micStops = 0;
+        window.rabbitTexts = []; window.modelError = false;
+        window.PluginMessageHandler = { postMessage(value) {
+          const request = JSON.parse(value);
+          if (!request.useLLM) return;
+          const payload = JSON.parse(request.message.split('Request: ')[1]);
+          window.rabbitTexts.push(payload.text);
+          queueMicrotask(() => window.onPluginMessage?.({ requestId: payload.requestId, artist: '아이유', title: '밤편지', language: 'ko' }));
+        } };
         Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: { getUserMedia: async () => {
           window.micCalls++; return { getTracks: () => [{ stop() { window.micStops++; } }] };
         } } });
@@ -24,13 +32,18 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
           stop() { this.state = 'inactive'; queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['fake-audio'], { type: this.mimeType }) }); this.onstop?.(); }); }
         };
       });
-      await context.route('**/api/voice/config', route => route.fulfill({ json: { enabled: configured } }));
-      await context.route('**/api/voice/search', route => {
-        uploads.push(route.request().headers());
-        return route.fulfill(providerError ? { status: 403, json: { error: 'forbidden' } } : {
-          json: { transcript: '아이유의 밤편지 틀어줘', language: 'ko', artist: '아이유', title: '밤편지' },
-        });
-      });
+      await context.route('**/api/voice/**', route => { uploads.push(route.request().url()); return route.fulfill({ status: 500, json: { error: 'unexpected_paid_route' } }); });
+      await context.route('**/local-speech.mjs?*', route => route.fulfill({ contentType: 'text/javascript', body: `
+        export class LocalSpeechProbe {
+          constructor(options) { this.options = options; this.ready = false; this.supported = true; window.mockRecognizer = this; }
+          async prepare() { this.options.onState({ state: 'loading', progress: { progress: 50 } }); this.ready = true; this.options.onState({ state: 'ready' }); }
+          async transcribeBlob(blob) {
+            if (window.modelError) throw Object.assign(new Error('runtime detail'), { code: 'local_transcription_timeout' });
+            return { transcript: '아이유의 밤편지 틀어줘', lang: 'ko' };
+          }
+          cancel() {} dispose() {}
+        }
+      ` }));
       await context.route('https://api.spotify.com/**', route => {
         const request = route.request(), url = new URL(request.url());
         if (url.pathname === '/v1/search') return route.fulfill({ json: { tracks: { items: exact ? [track] : [track, { ...track, uri: 'spotify:track:' + 'b'.repeat(22) }] } } });
@@ -40,6 +53,13 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       const tab = await context.newPage(); tab.on('pageerror', error => errors.push(error.message));
       await tab.goto(baseURL); await tab.locator('#title').filter({ hasText: '밤편지' }).waitFor();
       await tab.locator('#voice-open').click();
+      check(await tab.locator('#voice-record').isDisabled(), 'Capture enabled before model prepared');
+      await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
+      await tab.locator('#voice-panel[data-phase="error"]').waitFor();
+      await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
+      check(await tab.evaluate(() => window.micCalls) === 0, 'Unprepared model still opened mic');
+      await tab.locator('#voice-prepare').click();
+      await tab.locator('#voice-record:not(:disabled)').waitFor();
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-ready-' + locale + '.png' });
       for (const height of [282, 240]) {
         await tab.setViewportSize({ width: 240, height });
@@ -56,7 +76,8 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.evaluate(() => { window.dispatchEvent(new Event('longPressEnd')); window.dispatchEvent(new Event('sideClick')); });
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
       check(playback.length === 1 && playback[0].body.uris[0] === uri, 'Exact voice request did not play once');
-      check(uploads[0].authorization === 'Bearer fake-access', 'Voice request missing auth');
+      check(uploads.length === 0, 'Keyless flow called paid voice route');
+      check(await tab.evaluate(() => window.rabbitTexts[0]) === '아이유의 밤편지 틀어줘', 'Rabbit did not receive only the transcript');
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Microphone not released');
       exact = false;
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
@@ -74,22 +95,24 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.keyboard.press('Escape');
       check(await tab.locator('#voice-panel').isHidden(), 'Cancel did not close panel');
-      check(uploads.length === 2 && playback.length === 2, 'Cancellation submitted audio');
+      check(uploads.length === 0 && playback.length === 2, 'Cancellation submitted audio');
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Cancel leaked microphone');
-      // Server account errors must be understandable in both UI languages.
-      providerError = true;
+      // Local failures remain actionable and never fall back to a paid service.
+      await tab.evaluate(() => { window.modelError = true; });
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressEnd')));
       await tab.locator('#voice-panel[data-phase="error"]').waitFor();
-      check((await tab.locator('#voice-state').innerText()) !== 'forbidden', 'Raw server error code shown');
+      check(!(await tab.locator('#voice-state').innerText()).includes('local_transcription_timeout'), 'Raw local error code shown');
       await tab.locator('#voice-cancel').click();
-      configured = false;
+      await tab.evaluate(() => { window.mockRecognizer.ready = false; });
       const micBefore = await tab.evaluate(() => window.micCalls);
       await tab.evaluate(() => window.dispatchEvent(new Event('longPressStart')));
       await tab.locator('#voice-panel[data-phase="error"]').waitFor();
-      check(await tab.evaluate(() => window.micCalls) === micBefore, 'Unconfigured server still opened mic');
-      configured = true; providerError = false; exact = true;
+      check(await tab.evaluate(() => window.micCalls) === micBefore, 'Unprepared model still opened mic');
+      await tab.evaluate(() => { window.modelError = false; });
+      await tab.locator('#voice-prepare').click();
+      exact = true;
       const hold = await tab.locator('#voice-record').boundingBox();
       await tab.mouse.move(hold.x + hold.width / 2, hold.y + hold.height / 2); await tab.mouse.down();
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
@@ -100,7 +123,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await tab.locator('#voice-panel[data-phase="recording"]').waitFor();
       await tab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       check(await tab.evaluate(() => window.micCalls === window.micStops), 'Leaving page leaked microphone');
-      check(uploads.length === 4 && playback.length === 3, 'Leaving page submitted voice');
+      check(uploads.length === 0 && playback.length === 3, 'Leaving page submitted voice');
       check(errors.length === 0, 'Browser errors: ' + errors.join('; '));
       reports.push({ locale, playback: playback.length, uploads: uploads.length, errors });
     } finally { await context.close(); }

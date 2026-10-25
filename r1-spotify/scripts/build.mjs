@@ -8,7 +8,7 @@ types['i18n.mjs'] = 'text/javascript';
 types['voice.mjs'] = 'text/javascript';
 types['rabbit-test.html'] = 'text/html';
 types['rabbit-test.css'] = 'text/css';
-for (const name of ['rabbit-test.mjs', 'rabbit-probe.mjs']) types[name] = 'text/javascript';
+for (const name of ['rabbit-test.mjs', 'rabbit-probe.mjs', 'local-speech.mjs', 'local-asr-worker.mjs']) types[name] = 'text/javascript';
 types['pair.html'] = 'text/html';
 for (const name of ['pair.mjs', 'pair-api.mjs', 'pair-device.mjs', 'qrcode.mjs']) types[name] = 'text/javascript';
 for (const [filename, type] of Object.entries(types)) {
