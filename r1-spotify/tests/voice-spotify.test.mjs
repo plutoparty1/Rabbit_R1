@@ -137,10 +137,10 @@ test('play sends track URI JSON and safely encoded device; 401 refresh retains p
   assert.equal(playback[1].options.headers.Authorization, 'Bearer new-access');
 });
 
-test('explicit album playback uses known search metadata without a lookup or ordinary URI-list play', async () => {
+test('album playback uses known search metadata without a lookup or ordinary URI-list play', async () => {
   const calls = [];
   const client = makeClient(async (url, options) => { calls.push({ url: new URL(url), options }); return new Response(null, { status: 204 }); });
-  await client.playTrackFromAlbum(uri, 'phone & room', { albumUri });
+  assert.deepEqual(await client.playTrackFromAlbum(uri, 'phone & room', { albumUri }), { uri });
   assert.equal(calls.length, 1);
   assert.equal(calls[0].url.pathname, '/v1/me/player/play');
   assert.equal(calls[0].url.searchParams.get('device_id'), 'phone & room');
@@ -154,7 +154,7 @@ test('album playback retrieves only the selected track when search metadata has 
     calls.push({ url: new URL(url), options });
     return options.method === 'GET' ? json({ ...track, id: 'a'.repeat(22), album: { uri: albumUri } }) : new Response(null, { status: 204 });
   });
-  await client.playTrackFromAlbum(uri);
+  assert.deepEqual(await client.playTrackFromAlbum(uri), { uri });
   assert.equal(calls.length, 2);
   assert.equal(calls[0].url.pathname, '/v1/tracks/' + 'a'.repeat(22));
   assert.equal(calls[0].options.method, 'GET');
@@ -171,9 +171,27 @@ test('verified relinking uses the returned track in its own album rather than a 
     return options.method === 'GET' ? json({ uri: replacementUri, id: 'b'.repeat(22), type: 'track',
       linked_from: { uri, id: 'a'.repeat(22), type: 'track' }, album: { uri: albumUri, id: 'c'.repeat(22), type: 'album' } }) : new Response(null, { status: 204 });
   });
-  await client.playTrackFromAlbum(uri, 'phone');
+  assert.deepEqual(await client.playTrackFromAlbum(uri, 'phone'), { uri: replacementUri });
   assert.equal(calls.length, 2);
   assert.deepEqual(JSON.parse(calls[1].options.body), { context_uri: albumUri, offset: { uri: replacementUri }, position_ms: 0 });
+});
+
+test('album target is returned only after accepted playback and never after late cancellation', async () => {
+  let finish, calls = 0, settled = false;
+  const client = makeClient(async () => { calls++; return new Promise(resolve => { finish = resolve; }); });
+  const pending = client.playTrackFromAlbum(uri, 'phone', { albumUri }).then(result => { settled = true; return result; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  finish(new Response(null, { status: 204 }));
+  assert.deepEqual(await pending, { uri });
+  assert.equal(calls, 1);
+  const controller = new AbortController();
+  const cancelled = client.playTrackFromAlbum(uri, 'phone', { albumUri, signal: controller.signal });
+  await new Promise(resolve => setImmediate(resolve));
+  controller.abort();
+  finish(new Response(null, { status: 204 }));
+  await assert.rejects(cancelled, { name: 'AbortError' });
+  assert.equal(calls, 2);
 });
 
 test('unverifiable track or album metadata cannot trigger album playback', async () => {

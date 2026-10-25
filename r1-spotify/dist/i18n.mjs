@@ -5,9 +5,8 @@ export function getLocale(source = globalThis.navigator) {
 }
 
 const english = {
-  '이 곡부터 앨범 재생': 'Play album from this song',
+  '선택한 곡부터 앨범을 재생합니다. 다음 곡이 이어질 수 있어요.': 'Starts the album at your song. Following tracks may continue.',
   '이 곡의 앨범 정보를 확인할 수 없습니다. 곡을 다시 검색해 주세요.': 'The album for this song could not be confirmed. Search for the song again.',
-  '곡이 끝나면 앨범의 다음 곡이 이어질 수 있어요.': 'The next song on the album may play after this one.',
   'Spotify의 현재 곡이 선택한 곡과 다릅니다. 휴대폰의 Spotify에서 현재 곡을 확인해 주세요.': 'Spotify is reporting a different song. Check the current song in Spotify on your phone.',
   '선택한 곡이 일시정지 상태입니다. 휴대폰의 Spotify에서 재생을 시작해 주세요.': 'The selected song is paused. Start playback in Spotify on your phone.',
   'Spotify가 현재 재생 정보를 보내지 않았습니다. 휴대폰의 Spotify에서 재생 상태를 확인해 주세요.': 'Spotify did not return current playback information. Check playback in Spotify on your phone.',
@@ -236,7 +235,7 @@ const english = {
 "휴대폰에서 Client ID를 보내 주세요.": "Send your Client ID from your phone.",
 "연결 코드를 만들고 있습니다.": "Creating a connection code…",
 "Client ID를 받았습니다. 기기 사용 방식을 선택하고 로그인해 주세요.": "Client ID received. Choose a device mode and log in.",
-"버전 20261025-r34 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r34 · Disconnect removes saved login data.",
+"버전 20261025-r35 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.": "Version 20261025-r35 · Disconnect removes saved login data.",
   '이 기기에 저장된 Client ID 불러오기': 'Use the Client ID saved on this device',
   '기존 Client ID를 불러왔습니다. 로그인 버튼을 눌러 주세요.': 'Previous Client ID restored. Select the login button.',
   '버전 20261018-r19 · 연결 해제 시 저장된 로그인 정보를 삭제합니다.': 'Version 20261018-r19 · Disconnect removes saved login data.',

@@ -1,6 +1,6 @@
 # Local voice verification / 로컬 음성 검증
 
-Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r34`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
+Date: 2026-10-25 (Asia/Seoul). Current source UI: `20261025-r35`; diagnostics: `20261025-r26-test`. The first evidence table contains historical r25 desktop measurements; later sections identify newer checks separately.
 
 The default flow is microphone → on-device Whisper → local command parsing / conservative text query → Spotify search/playback. No AI API key or running companion PC is required. The initial public model/runtime download and Spotify operations require internet access. This is not an integration with Rabbit's undocumented native speech recognizer.
 
@@ -25,6 +25,20 @@ The desktop checks downloaded and executed the real model; they were not mocked 
 PC 시험은 모의 인식 응답 대신 실제 모델을 내려받아 실행했습니다. 입력은 합성 시험 음성이며 r1 녹음이 아닙니다. 시간은 한 번의 측정값으로 성능을 보장하지 않습니다. 한국어 결과는 곡명을 틀렸고 두 예문만으로 다국어 정확도를 평가할 수 없습니다. 이 Worker 단독 시험은 래빗 텍스트 분석이나 실제 Spotify 재생을 실행하지 않았습니다.
 
 The r25 repository suite passed 125 tests. Main-player browser checks passed in Korean and English with zero voice uploads; diagnostic browser checks passed preparation, capture and cancellation at 240-pixel widths. These UI checks use controlled bridge/model responses. Automated controller/worker/voice tests cover preparation, cancellation, resource release, bounded input, error redaction, explicit/automatic language selection and result handling. They do not replace an r1 trial. Run `node --test tests/local-speech.test.mjs tests/local-asr-worker.test.mjs tests/voice.test.mjs` from `r1-spotify` for these unit checks.
+
+## r35 direct album playback / 앨범 방식으로 바로 재생
+
+After r34, the user reported the no-playback-information message and then explicitly confirmed that pressing **Play album from this song** plays the song on their phone. This is user-reported device evidence for the alternative route; no authenticated phone response or audible output was independently observed by the agent. It does not establish why Spotify's ordinary track-list command failed.
+
+r35 makes that album-context route the first and only playback command for candidate selection and a unique exact voice match. It reads the current active device, validates the selected track and album, sends `context_uri` plus `offset.uri` and `position_ms: 0`, then runs the existing strict confirmation. There is no automatic second playback request or device transfer. An unconfirmed result keeps the candidates for a deliberate retry. The redundant alternate-action button is removed; a notice before playback explains that following album tracks may continue. Album lookup failures remain explicit and do not silently send a different playback command.
+
+If an album lookup validates a relinked track URI, the accepted command returns that URI for confirmation alongside the requested track aliases. This avoids rejecting a correct relinked track solely because playback status omits `linked_from`. It does not relax the target-device or playing-state requirements.
+
+사용자는 r34에서 ‘재생 정보 없음’ 안내 뒤 ‘이 곡부터 앨범 재생’을 누르면 휴대폰에서 곡이 재생된다고 확인했습니다. r35는 후보 선택·정확한 곡 자동 재생에 그 방식을 처음부터 사용합니다. 별도 재시도 버튼을 없애고 앨범의 다음 곡이 이어질 수 있음을 재생 전에 안내합니다. 현재 기기 조회·곡과 기기의 실제 재생 확인·취소를 유지하며, 자동 두 번째 요청이나 기기 전환은 하지 않습니다. 이 근거는 사용자 실기 보고이며 Spotify 내부 원인을 규명한 것은 아닙니다.
+
+Validation: all 219 repository Node tests passed after rebuilding. Korean/English controlled browser checks passed at 240×282 and 240×240: both initial exact-match playback and candidate selection send a single album-context command to the freshly observed device, with no `uris` command. Missing-data and wrong-track responses retain retry candidates; cancellation and matching-track/device verification remain. Each locale made seven fixture playback commands, with zero voice uploads and zero page errors. Screenshots confirmed that the album notice and retry candidates are readable and reachable. The browser checks use mocked Spotify responses; the actual-phone evidence is the user's r34 album-action report above, not an independent r35 device test.
+
+검증: 빌드 후 Node 테스트 219개와 한국어·영어 브라우저 검사를 통과했습니다. 처음부터 앨범 방식으로 한 번 요청하고, 오류 시 후보를 유지하며 취소·재생 확인을 지키는지 모의 응답으로 검사했습니다. 240×240 화면의 안내와 후보 접근성도 확인했습니다. 사용자 휴대폰에서 확인된 것은 r34 앨범 버튼의 재생 성공이며, r35 실기 시험은 별도입니다.
 
 ## r34 unconfirmed phone playback / 휴대폰 재생 확인 실패
 
@@ -177,7 +191,7 @@ Model files may be reused from the WebView cache; cache persistence is not guara
 
 ## Next r1 trial / 다음 실기 시험
 
-For the main player, open `?v=20261025-r34` and leave the physical button released while the microphone connects. Allow access if requested, or tap the retry control once after a rejected attempt. In “Find a song,” once the microphone is connected, make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. Select a candidate and check that its title and the displayed playback device match actual Spotify playback; an unconfirmed request must retain the list and show the reason. / 재생 화면 r34에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 자동 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다. 후보를 선택한 뒤 곡명과 표시된 기기가 실제 Spotify 재생과 맞는지 확인합니다. 확인되지 않은 요청에는 이유와 후보가 남아야 합니다.
+For the main player, open `?v=20261025-r35` and leave the physical button released while the microphone connects. Allow access if requested, or tap the retry control once after a rejected attempt. In “Find a song,” once the microphone is connected, make three hold/speak/release requests, including one while the recognizer is still loading; then leave and return to check automatic preparation without holding. Record microphone preparation, hold-to-recording and post-release recognition delays separately. Select a candidate and check that its title and the displayed playback device match actual Spotify playback; an unconfirmed request must retain the list and show the reason. / 재생 화면 r35에서 버튼을 누르지 않고 자동 준비를 확인합니다. 권한 창은 허용하고 거절된 경우에만 화면 버튼으로 한 번 재시도합니다. ‘노래 찾기’에서 마이크가 연결되면 모델이 준비 중이어도 누른 채 말하고 놓습니다. 세 번 반복하고, 앱에 돌아왔을 때도 자동 준비되는지 확인합니다. 마이크 준비·누름에서 녹음 시작·놓은 뒤 인식 시간을 구분합니다. 후보를 선택한 뒤 곡명과 표시된 기기가 실제 Spotify 재생과 맞는지 확인합니다. 확인되지 않은 요청에는 이유와 후보가 남아야 합니다.
 
 The separate diagnostic flow remains:
 

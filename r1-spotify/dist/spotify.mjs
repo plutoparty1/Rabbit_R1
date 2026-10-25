@@ -322,10 +322,13 @@ export class SpotifyClient {
     if (typeof albumUri !== 'string' || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) throw albumError();
     if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
     const query = deviceId ? '?' + new URLSearchParams({ device_id: deviceId }) : '';
-    // Only the explicit album action calls this path; ordinary play is unchanged.
-    return this.request('/me/player/play' + query, {
+    await this.request('/me/player/play' + query, {
       method: 'PUT', data: { context_uri: albumUri, offset: { uri: offsetUri }, position_ms: 0 }, signal,
     });
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
+    // This verified target is an alias for confirmation, not proof of playback.
+    return { uri: offsetUri };
   }
   async player({ signal } = {}) { return this.request('/me/player', { signal, cache: 'no-store' }); }
   // Spotify의 실제 재생 기기에 0~100 정수 볼륨을 적용하며 기존 인증·요청 제한 처리를 재사용합니다.

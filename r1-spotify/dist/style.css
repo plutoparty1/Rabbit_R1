@@ -1082,6 +1082,7 @@ header #voice-open{margin-left:auto;font-size:10px;padding:0 5px;color:#d2b77d;w
 #voice-state{color:#f5f7f5;font-size:21px;font-weight:800;line-height:1.18;margin:2px 0 7px}#voice-instruction{font-size:13px;line-height:1.4;margin:5px 0 8px;color:#e1e7e3}#voice-transcript{margin-top:8px;color:#f5f7f5}#voice-language{color:#a0aaa3;font-size:11px;margin-top:4px}
 #voice-recording{color:#ffb3ad;font-size:12px;font-weight:700;margin:0 0 7px;font-variant-numeric:tabular-nums}.recording-dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:#ff665c;margin-right:5px}#voice-elapsed{margin-left:5px}
 #voice-notice{font-size:11px;color:#a6b5ab;margin:10px 0 4px}
+#voice-playback-notice{font-size:11px;line-height:1.4;color:#b9c6bf;margin:6px 0 10px}
 #voice-record{min-height:44px;flex:none;background:#303935;border:1px solid #75827b;color:#f5f7f5;font-size:13px;font-weight:700;touch-action:none;user-select:none;-webkit-user-select:none}
 #voice-panel[data-phase="preparing"] #voice-state,#voice-panel[data-phase="warming"] #voice-state{color:#ffd37a}#voice-panel[data-phase="preparing"] #voice-record,#voice-panel[data-phase="warming"] #voice-record{background:#4c3c22;border-color:#b18a48;color:#ffe3ad}
 #voice-panel[data-phase="recording"] #voice-record{background:#a42b24;border-color:#ff8a80;color:#fff}#voice-panel[data-phase="recording"] #voice-state{color:#ff8a80}
@@ -1093,6 +1094,4 @@ header #voice-open{margin-left:auto;font-size:10px;padding:0 5px;color:#d2b77d;w
 #voice-results button{display:block;min-height:48px;width:100%;text-align:left;border:1px solid #536159;padding:6px 8px;margin:8px 0;font-size:12px;overflow-wrap:anywhere}
 #voice-results strong,#voice-results span{display:block}#voice-results span{font-size:11px;color:#a6b5ab}
 #voice-prepare,#voice-enable { width: 100%; min-height: 44px; border: 1px solid #536159; padding: 6px 8px; }
-#voice-album-retry-button{width:100%;min-height:44px;border:1px solid #82938a;padding:6px 8px;font-size:13px}
-#voice-album-retry p{font-size:11px;line-height:1.4;margin:6px 0 10px;color:#b9c6bf}
 #voice-model-status,#voice-wait-status,#voice-wake-status { font-size: 11px; line-height: 1.4; margin: 6px 0; color:#a6b5ab; font-variant-numeric:tabular-nums; }
