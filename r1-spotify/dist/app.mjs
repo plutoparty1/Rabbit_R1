@@ -1,12 +1,12 @@
 // 모든 입력은 같은 명령 함수로 모으고 Spotify의 실제 응답으로 화면을 갱신합니다.
-import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r33';
-import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r33';
-import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r33';
-import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r33';
-import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r33';
-import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r33';
+import { normalizePlayer, progressAt, swipeAction, parseLrc, currentLine } from './core.mjs?v=20261025-r34';
+import { SpotifyClient, getLyrics, getSessionMode, setSessionMode } from './spotify.mjs?v=20261025-r34';
+import { t, getLocale, createStaticTranslator } from './i18n.mjs?v=20261025-r34';
+import { VoiceController, createKeylessTranscriber, keylessVoiceMessage } from './voice.mjs?v=20261025-r34';
+import { LocalSpeechProbe } from './local-speech.mjs?v=20261025-r34';
+import { createScreenWakeLock } from './screen-wake.mjs?v=20261025-r34';
 const applyStaticLocale = createStaticTranslator(document);
-import { setupPairing } from './pair-device.mjs?v=20261025-r33';
+import { setupPairing } from './pair-device.mjs?v=20261025-r34';
 applyStaticLocale(getLocale());
 const $ = id => document.getElementById(id);
 const redirectUri = new URL('./', location.href).href;
@@ -370,6 +370,9 @@ function renderVoice(state = voiceController.state) {
   $('voice-record').disabled = !['preparing', 'recording'].includes(state.phase) && (!ready || active);
   $('voice-record').setAttribute('aria-pressed', String(state.phase === 'recording'));
   $('voice-record').textContent = t(presentation[2]);
+  const albumRetry = state.phase === 'choosing' && state.playbackError && state.albumRetryAvailable;
+  $('voice-album-retry').hidden = !albumRetry;
+  $('voice-album-retry-button').disabled = !albumRetry;
   $('voice-results').replaceChildren();
   for (const track of state.tracks) {
     const button = document.createElement('button'); button.type = 'button';
@@ -499,6 +502,7 @@ function prepareVoiceModel(retry = false) {
 }
 $('voice-prepare').onclick = () => void prepareVoiceStartup(true);
 $('voice-enable').onclick = () => void prepareVoiceStartup(true);
+$('voice-album-retry-button').onclick = () => void voiceController.retryFromAlbum();
 $('voice-open').onclick = () => { if (openVoice() && (voiceMicrophoneRetry || voiceModelError)) void prepareVoiceStartup(true); };
 $('voice-cancel').onclick = closeVoice;
 const voiceButton = $('voice-record');

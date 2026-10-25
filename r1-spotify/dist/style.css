@@ -1093,4 +1093,6 @@ header #voice-open{margin-left:auto;font-size:10px;padding:0 5px;color:#d2b77d;w
 #voice-results button{display:block;min-height:48px;width:100%;text-align:left;border:1px solid #536159;padding:6px 8px;margin:8px 0;font-size:12px;overflow-wrap:anywhere}
 #voice-results strong,#voice-results span{display:block}#voice-results span{font-size:11px;color:#a6b5ab}
 #voice-prepare,#voice-enable { width: 100%; min-height: 44px; border: 1px solid #536159; padding: 6px 8px; }
+#voice-album-retry-button{width:100%;min-height:44px;border:1px solid #82938a;padding:6px 8px;font-size:13px}
+#voice-album-retry p{font-size:11px;line-height:1.4;margin:6px 0 10px;color:#b9c6bf}
 #voice-model-status,#voice-wait-status,#voice-wake-status { font-size: 11px; line-height: 1.4; margin: 6px 0; color:#a6b5ab; font-variant-numeric:tabular-nums; }

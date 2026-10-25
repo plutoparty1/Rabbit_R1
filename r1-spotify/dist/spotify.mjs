@@ -299,6 +299,34 @@ export class SpotifyClient {
     const query = deviceId ? '?' + new URLSearchParams({ device_id: deviceId }) : '';
     return this.request('/me/player/play' + query, { method: 'PUT', data: { uris: [uri] }, signal });
   }
+  async playTrackFromAlbum(uri, deviceId, { signal, albumUri } = {}) {
+    if (typeof uri !== 'string' || !/^spotify:track:[A-Za-z0-9]{22}$/.test(uri)) throw new Error('유효한 Spotify 곡을 선택해 주세요.');
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const generation = this.generation;
+    const albumError = () => new Error('이 곡의 앨범 정보를 확인할 수 없습니다. 곡을 다시 검색해 주세요.');
+    let offsetUri = uri;
+    if (albumUri == null) {
+      const track = await this.request('/tracks/' + uri.split(':')[2], { signal });
+      if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+      if (generation !== this.generation) throw new Error('연결이 해제되었습니다.');
+      const validTrackIdentity = item => typeof item?.id === 'string' && /^[A-Za-z0-9]{22}$/.test(item.id) &&
+        item.uri === 'spotify:track:' + item.id && (item.type === undefined || item.type === 'track');
+      if (!validTrackIdentity(track) || track.is_local || track.is_playable === false || track.restrictions?.reason ||
+          (track.uri !== uri && (!validTrackIdentity(track.linked_from) || track.linked_from.uri !== uri))) throw albumError();
+      albumUri = track.album?.uri;
+      if ((track.album?.id != null && albumUri !== 'spotify:album:' + track.album.id) ||
+          (track.album?.type != null && track.album.type !== 'album')) throw albumError();
+      // A relinked track belongs to the returned album; start at that exact URI.
+      offsetUri = track.uri;
+    }
+    if (typeof albumUri !== 'string' || !/^spotify:album:[A-Za-z0-9]{22}$/.test(albumUri)) throw albumError();
+    if (signal?.aborted) throw new DOMException('Cancelled', 'AbortError');
+    const query = deviceId ? '?' + new URLSearchParams({ device_id: deviceId }) : '';
+    // Only the explicit album action calls this path; ordinary play is unchanged.
+    return this.request('/me/player/play' + query, {
+      method: 'PUT', data: { context_uri: albumUri, offset: { uri: offsetUri }, position_ms: 0 }, signal,
+    });
+  }
   async player({ signal } = {}) { return this.request('/me/player', { signal, cache: 'no-store' }); }
   // Spotify의 실제 재생 기기에 0~100 정수 볼륨을 적용하며 기존 인증·요청 제한 처리를 재사용합니다.
   async volume(percent, deviceId) {

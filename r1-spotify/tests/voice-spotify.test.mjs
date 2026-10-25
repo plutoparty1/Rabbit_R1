@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { SpotifyClient } from '../dist/spotify.mjs';
 
 const uri = 'spotify:track:' + 'a'.repeat(22);
+const albumUri = 'spotify:album:' + 'c'.repeat(22);
 const track = { uri, name: '밤편지', artists: [{ name: '아이유' }] };
 const storage = { set: async () => {}, remove: async () => {} };
 function makeClient(fetcher) {
@@ -134,6 +135,110 @@ test('play sends track URI JSON and safely encoded device; 401 refresh retains p
     assert.deepEqual(JSON.parse(call.options.body), { uris: [uri] });
   }
   assert.equal(playback[1].options.headers.Authorization, 'Bearer new-access');
+});
+
+test('explicit album playback uses known search metadata without a lookup or ordinary URI-list play', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => { calls.push({ url: new URL(url), options }); return new Response(null, { status: 204 }); });
+  await client.playTrackFromAlbum(uri, 'phone & room', { albumUri });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.pathname, '/v1/me/player/play');
+  assert.equal(calls[0].url.searchParams.get('device_id'), 'phone & room');
+  assert.equal(calls[0].options.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[0].options.body), { context_uri: albumUri, offset: { uri }, position_ms: 0 });
+});
+
+test('album playback retrieves only the selected track when search metadata has no album', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return options.method === 'GET' ? json({ ...track, id: 'a'.repeat(22), album: { uri: albumUri } }) : new Response(null, { status: 204 });
+  });
+  await client.playTrackFromAlbum(uri);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].url.pathname, '/v1/tracks/' + 'a'.repeat(22));
+  assert.equal(calls[0].options.method, 'GET');
+  assert.equal(calls[1].url.pathname, '/v1/me/player/play');
+  assert.equal(calls[1].url.search, '');
+  assert.equal(calls[1].options.method, 'PUT');
+  assert.deepEqual(JSON.parse(calls[1].options.body), { context_uri: albumUri, offset: { uri }, position_ms: 0 });
+});
+
+test('verified relinking uses the returned track in its own album rather than a guessed offset', async () => {
+  const calls = [], replacementUri = 'spotify:track:' + 'b'.repeat(22);
+  const client = makeClient(async (url, options) => {
+    calls.push({ url: new URL(url), options });
+    return options.method === 'GET' ? json({ uri: replacementUri, id: 'b'.repeat(22), type: 'track',
+      linked_from: { uri, id: 'a'.repeat(22), type: 'track' }, album: { uri: albumUri, id: 'c'.repeat(22), type: 'album' } }) : new Response(null, { status: 204 });
+  });
+  await client.playTrackFromAlbum(uri, 'phone');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(JSON.parse(calls[1].options.body), { context_uri: albumUri, offset: { uri: replacementUri }, position_ms: 0 });
+});
+
+test('unverifiable track or album metadata cannot trigger album playback', async () => {
+  const detail = { ...track, id: 'a'.repeat(22), album: { uri: albumUri } };
+  const replacement = { ...detail, uri: 'spotify:track:' + 'b'.repeat(22), id: 'b'.repeat(22) };
+  const invalid = [null, {}, { ...detail, id: undefined }, { ...detail, id: 'b'.repeat(22) },
+    replacement, { ...replacement, linked_from: { uri, id: 'b'.repeat(22) } },
+    { ...replacement, linked_from: { uri: 'spotify:track:' + 'd'.repeat(22), id: 'd'.repeat(22) } },
+    { ...detail, type: 'episode' }, { ...detail, is_local: true }, { ...detail, is_playable: false },
+    { ...detail, restrictions: { reason: 'market' } }, { ...detail, album: undefined },
+    { ...detail, album: { uri: 'spotify:playlist:' + 'c'.repeat(22) } },
+    { ...detail, album: { uri: albumUri, id: 'd'.repeat(22) } },
+    { ...detail, album: { uri: albumUri, type: 'playlist' } }];
+  for (const response of invalid) {
+    const calls = [];
+    const client = makeClient(async (url, options) => { calls.push(options.method); return json(response); });
+    await assert.rejects(client.playTrackFromAlbum(uri), /앨범 정보를 확인할 수 없습니다/);
+    assert.deepEqual(calls, ['GET']);
+  }
+});
+
+test('invalid explicit album inputs and cancellation cannot issue a playback request', async () => {
+  let calls = 0;
+  const client = makeClient(async () => { calls++; return json({ ...track, id: 'a'.repeat(22), album: { uri: albumUri } }); });
+  for (const input of ['', 'https://example.test/', 'spotify:playlist:' + 'c'.repeat(22), {}]) {
+    await assert.rejects(client.playTrackFromAlbum(uri, undefined, { albumUri: input }), /앨범/);
+  }
+  await assert.rejects(client.playTrackFromAlbum('spotify:episode:' + 'a'.repeat(22), undefined, { albumUri }), /곡/);
+  const before = new AbortController(); before.abort();
+  await assert.rejects(client.playTrackFromAlbum(uri, undefined, { signal: before.signal }), { name: 'AbortError' });
+  await assert.rejects(client.playTrackFromAlbum(uri, undefined, { albumUri, signal: before.signal }), { name: 'AbortError' });
+  assert.equal(calls, 0);
+  const during = new AbortController();
+  client.fetcher = async (url, options) => {
+    calls++; assert.equal(options.method, 'GET');
+    return { ok: true, status: 200, json: async () => {
+      during.abort(); return { ...track, id: 'a'.repeat(22), album: { uri: albumUri } };
+    } };
+  };
+  await assert.rejects(client.playTrackFromAlbum(uri, 'phone', { signal: during.signal }), { name: 'AbortError' });
+  assert.equal(calls, 1);
+});
+
+test('album playback retains context and device after one 401 refresh but never retries transient failures', async () => {
+  const calls = [];
+  const client = makeClient(async (url, options) => {
+    calls.push({ url, options });
+    if (url.includes('/api/token')) return json({ access_token: 'fresh', expires_in: 3600 });
+    return new Response(null, { status: calls.length === 1 ? 401 : 204 });
+  });
+  await client.playTrackFromAlbum(uri, 'phone & room', { albumUri });
+  const playback = calls.filter(call => !call.url.includes('/api/token'));
+  assert.equal(playback.length, 2);
+  for (const call of playback) {
+    assert.equal(call.options.method, 'PUT');
+    assert.equal(new URL(call.url).searchParams.get('device_id'), 'phone & room');
+    assert.deepEqual(JSON.parse(call.options.body), { context_uri: albumUri, offset: { uri }, position_ms: 0 });
+  }
+  assert.equal(playback[1].options.headers.Authorization, 'Bearer fresh');
+  let failures = 0;
+  client.fetcher = async () => { failures++; return new Response(null, { status: 503 }); };
+  await assert.rejects(client.playTrackFromAlbum(uri, 'phone', { albumUri }));
+  assert.equal(failures, 1);
+  await assert.rejects(client.playTrackFromAlbum(uri, 'phone'));
+  assert.equal(failures, 2);
 });
 
 test('player state is fetched without HTTP caching and remains compatible with callers without options', async () => {

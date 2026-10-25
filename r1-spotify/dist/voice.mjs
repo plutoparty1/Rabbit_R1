@@ -10,6 +10,39 @@ export const PLAYBACK_CONFIRM_TIMEOUT_MS = 8000;
 export const PLAYBACK_CONFIRM_INTERVAL_MS = 1000;
 const playbackUnconfirmed = '선택한 곡의 재생을 확인하지 못했습니다. Spotify 기기와 연결 상태를 확인한 뒤 아래 곡을 다시 눌러 주세요.';
 const playbackStateFailed = 'Spotify 재생 상태를 확인하지 못했습니다. 연결 상태를 확인한 뒤 아래 곡을 다시 눌러 주세요.';
+const trackUri = value => typeof value === 'string' && /^spotify:track:[A-Za-z0-9]{22}$/.test(value);
+const trackAliases = track => new Set([track?.uri, track?.linked_from?.uri].filter(trackUri));
+const displayText = (value, limit) => typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, limit) : '';
+function playbackObservation(player, requested, deviceId) {
+  const actual = trackAliases(player?.item), expected = trackAliases(requested);
+  const actualDevice = typeof player?.device?.id === 'string' && player.device.id.trim() ? player.device.id : null;
+  return {
+    trackMatch: actual.size ? [...actual].some(uri => expected.has(uri)) : null,
+    deviceMatch: actualDevice === null ? null : actualDevice === deviceId,
+    playing: typeof player?.is_playing === 'boolean' ? player.is_playing : null,
+    itemType: ['track', 'episode', 'ad', 'unknown'].includes(player?.currently_playing_type || player?.item?.type) ? player.currently_playing_type || player.item.type : 'unknown',
+    observedTrackName: displayText(player?.item?.name, 120),
+    observedArtist: displayText(Array.isArray(player?.item?.artists) ? player.item.artists.slice(0, 3).map(artist => displayText(artist?.name, 80)).filter(Boolean).join(', ') : '', 160),
+    observedDeviceName: displayText(player?.device?.name, 80),
+  };
+}
+function confirmationFailure(last, completedChecks, started, endReason) {
+  const observation = { ...(last || playbackObservation(null, null, '')), completedChecks,
+    elapsedMs: Math.min(PLAYBACK_CONFIRM_TIMEOUT_MS, Math.max(0, Math.round(performance.now() - started))), endReason };
+  const reason = !completedChecks ? 'no_reply_timeout' : observation.deviceMatch === false ? 'different_device'
+    : observation.trackMatch === false ? 'different_track' : observation.trackMatch === true && observation.playing === false ? 'paused'
+      : observation.trackMatch === null && !observation.observedTrackName ? 'no_data' : 'identity_unknown';
+  const message = {
+    different_track: 'Spotify의 현재 곡이 선택한 곡과 다릅니다. 휴대폰의 Spotify에서 현재 곡을 확인해 주세요.',
+    paused: '선택한 곡이 일시정지 상태입니다. 휴대폰의 Spotify에서 재생을 시작해 주세요.',
+    no_data: 'Spotify가 현재 재생 정보를 보내지 않았습니다. 휴대폰의 Spotify에서 재생 상태를 확인해 주세요.',
+    different_device: 'Spotify의 재생 기기가 요청한 기기와 다릅니다. 휴대폰의 Spotify에서 재생 기기를 확인해 주세요.',
+    identity_unknown: observation.trackMatch === true && observation.playing === true && observation.deviceMatch === null
+      ? '선택한 곡이 재생 중이지만 재생 기기를 확인하지 못했습니다.' : 'Spotify가 곡 또는 재생 기기를 확인할 정보를 보내지 않았습니다.',
+    no_reply_timeout: 'Spotify 재생 상태 응답을 받지 못했습니다. 휴대폰의 Spotify와 연결 상태를 확인해 주세요.',
+  }[reason];
+  return Object.assign(new Error(message), { code: 'playback_unconfirmed', observation: { ...observation, reason } });
+}
 const mimeTypes = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
 const serverMessages = {
   unavailable: '음성 검색이 설정되지 않았습니다. 운영자가 Gemini API 키와 Spotify 사용자 허용 목록을 설정해야 합니다.',
@@ -239,7 +272,7 @@ export class VoiceController {
     const previous = this.session;
     this.session = null;
     if (previous) this.cleanup(previous);
-    this.update({ phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
+    this.update({ phase: 'idle', message: '우측 버튼을 누르고 기다리세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '', playbackObservation: null, albumRetryAvailable: false });
   }
   fail(session, message) {
     if (this.session !== session) return;
@@ -262,7 +295,7 @@ export class VoiceController {
     if (this.requirePreparedMicrophone || this.preparationEnabled) return this.beginPrepared();
     const session = { abort: new AbortController(), chunks: [], bytes: 0, timer: null, held: true, started: false, microphoneEpoch: this.microphoneEpoch };
     this.session = session;
-    this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
+    this.update({ phase: 'preparing', message: '마이크 연결 중 · 아직 말하지 마세요.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '', playbackObservation: null, albumRetryAvailable: false });
     try {
       if (!this.mediaDevices?.getUserMedia || !this.Recorder) throw new Error('이 브라우저에서 녹음을 지원하지 않습니다. HTTPS와 마이크 권한을 확인해 주세요.');
       if (this.transcriber) {
@@ -381,7 +414,7 @@ export class VoiceController {
       this.parkMicrophone(session); this.rearmMicrophone();
       void this.process(session);
     };
-    this.update({ phase: 'preparing', message: '녹음을 시작합니다.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '' });
+    this.update({ phase: 'preparing', message: '녹음을 시작합니다.', transcript: '', language: '', tracks: [], playbackError: false, deviceName: '', playbackObservation: null, albumRetryAvailable: false });
     session.timer = this.setTimer(failCapture, RECORDER_START_TIMEOUT_MS);
     try {
       // Recorder startup and permission have already completed during app preparation.
@@ -473,6 +506,11 @@ export class VoiceController {
     const track = session.tracks.find(item => item.uri === uri);
     if (track) await this.play(session, track);
   }
+  async retryFromAlbum() {
+    const session = this.session;
+    if (!session || this.state.phase !== 'choosing' || !this.state.albumRetryAvailable || !session.confirmationFailedTrack) return;
+    await this.play(session, session.confirmationFailedTrack, { fromAlbum: true });
+  }
   waitForPlaybackPoll(signal) {
     return new Promise((resolve, reject) => {
       let timer;
@@ -487,12 +525,13 @@ export class VoiceController {
       timer = this.setTimer(() => finish(), PLAYBACK_CONFIRM_INTERVAL_MS);
     });
   }
-  async confirmPlayback(session, uri, deviceId) {
+  async confirmPlayback(session, track, deviceId) {
     const controller = new AbortController(), signal = controller.signal;
     const cancelled = () => controller.abort();
     session.abort.signal.addEventListener('abort', cancelled, { once: true });
-    let timedOut = false, rejectAbort;
-    const aborted = new Promise((_, reject) => { rejectAbort = () => reject(timedOut ? new Error(playbackUnconfirmed) : new DOMException('Cancelled', 'AbortError')); });
+    let timedOut = false, rejectAbort, completedChecks = 0, last = null;
+    const started = performance.now();
+    const aborted = new Promise((_, reject) => { rejectAbort = () => reject(timedOut ? confirmationFailure(last, completedChecks, started, 'deadline') : new DOMException('Cancelled', 'AbortError')); });
     signal.addEventListener('abort', rejectAbort, { once: true });
     const deadline = this.setTimer(() => { timedOut = true; controller.abort(); }, PLAYBACK_CONFIRM_TIMEOUT_MS);
     if (session.abort.signal.aborted) controller.abort();
@@ -503,11 +542,12 @@ export class VoiceController {
         if (signal.aborted || !this.current(session)) throw new DOMException('Cancelled', 'AbortError');
         const player = await this.client.player({ signal });
         if (signal.aborted || !this.current(session)) throw new DOMException('Cancelled', 'AbortError');
-        if (player?.is_playing === true && player.device?.id === deviceId &&
-            (player.item?.uri === uri || player.item?.linked_from?.uri === uri)) return player;
+        completedChecks++;
+        last = playbackObservation(player, track, deviceId);
+        if (last.playing === true && last.deviceMatch === true && last.trackMatch === true) return true;
         if (attempt < 5) await this.waitForPlaybackPoll(signal);
       }
-      throw new Error(playbackUnconfirmed);
+      throw confirmationFailure(last, completedChecks, started, 'attempts');
     };
     try { return await Promise.race([poll(), aborted]); }
     finally {
@@ -517,12 +557,13 @@ export class VoiceController {
       controller.abort();
     }
   }
-  async play(session, track) {
+  async play(session, track, { fromAlbum = false } = {}) {
     if (!this.current(session)) return;
     // Keep the choices until playback is observed, so a failed request can be
     // retried by a deliberate tap without repeating speech recognition.
     if (!session.tracks?.length) session.tracks = [track];
-    this.update({ phase: 'playing', message: 'Spotify에 재생을 요청하고 있습니다.', tracks: [], playbackError: false, deviceName: '' });
+    session.confirmationFailedTrack = null;
+    this.update({ phase: 'playing', message: 'Spotify에 재생을 요청하고 있습니다.', tracks: [], playbackError: false, deviceName: '', playbackObservation: null, albumRetryAvailable: false });
     try {
       if (!this.canStart()) throw new Error('Spotify를 연결해 주세요.');
       // Recognition can take long enough for Spotify Connect's active device to
@@ -537,17 +578,23 @@ export class VoiceController {
       const deviceName = typeof device.name === 'string' ? device.name : '';
       this.update({ deviceName });
       if (!this.current(session)) return;
-      await this.client.playTrack(track.uri, device.id, { signal: session.abort.signal });
+      if (fromAlbum) await this.client.playTrackFromAlbum(track.uri, device.id, { signal: session.abort.signal, albumUri: track.album?.uri });
+      else await this.client.playTrack(track.uri, device.id, { signal: session.abort.signal });
       if (!this.current(session)) return;
       this.update({ phase: 'verifying', message: '선택한 곡이 재생되는지 확인하고 있습니다.', deviceName });
-      await this.confirmPlayback(session, track.uri, device.id);
+      await this.confirmPlayback(session, track, device.id);
       if (!this.current(session)) return;
       this.session = null;
       this.cleanup(session);
-      this.update({ phase: 'done', message: '선택한 곡이 재생 중입니다.', track, deviceName, playbackError: false });
+      this.update({ phase: 'done', message: '선택한 곡이 재생 중입니다.', track, deviceName, playbackError: false, playbackObservation: null, albumRetryAvailable: false });
     } catch (error) {
-      if (this.current(session)) this.update({ phase: 'choosing', message: error?.name === 'AbortError' ? playbackStateFailed : error?.message || playbackUnconfirmed,
-        tracks: session.tracks, playbackError: true });
+      if (this.current(session)) {
+        const observation = error?.code === 'playback_unconfirmed' ? error.observation : null;
+        const albumRetryAvailable = Boolean(observation && trackUri(track.uri));
+        session.confirmationFailedTrack = albumRetryAvailable ? track : null;
+        this.update({ phase: 'choosing', message: error?.name === 'AbortError' ? playbackStateFailed : error?.message || playbackUnconfirmed,
+          tracks: session.tracks, playbackError: true, playbackObservation: observation, albumRetryAvailable });
+      }
     }
   }
 }

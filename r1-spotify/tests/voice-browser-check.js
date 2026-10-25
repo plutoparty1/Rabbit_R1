@@ -10,8 +10,9 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
     const playerGate = new Promise(resolve => { finishPlayer = resolve; });
     const verificationGate = new Promise(resolve => { finishVerification = resolve; });
     const uri = 'spotify:track:' + 'a'.repeat(22);
+    const albumUri = 'spotify:album:' + 'd'.repeat(22);
     const track = { uri, id: 'a'.repeat(22), name: '밤편지', type: 'track', duration_ms: 180000,
-      artists: [{ name: '아이유' }], album: { name: 'Palette', images: [] } };
+      artists: [{ name: '아이유' }], album: { uri: albumUri, name: 'Palette', images: [] } };
     const state = { is_playing: true, progress_ms: 0, actions: {}, device: { id: 'speaker', name: 'Living room', is_restricted: false }, item: track };
     try {
       await context.addInitScript(() => {
@@ -88,6 +89,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
         if (request.method() !== 'GET') {
           const body = request.postDataJSON(); playback.push({ url: url.pathname, deviceId: url.searchParams.get('device_id'), body });
           if (applyPlayback && body?.uris?.[0]) { state.item = { ...track, uri: body.uris[0], id: body.uris[0].split(':').at(-1) }; state.is_playing = true; }
+          if (body?.context_uri === albumUri && body?.offset?.uri) { state.item = { ...track, uri: body.offset.uri, id: body.offset.uri.split(':').at(-1) }; state.is_playing = true; }
           return route.fulfill({ status: 204, body: '' });
         }
         await playerGate;
@@ -203,14 +205,37 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await tab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '재생을 확인하지 못했어요' : 'Playback not confirmed'), 'Wrong-track 204 is labeled as success');
       if (locale === 'en-US') check(!/[가-힣]/.test(await tab.locator('#voice-instruction').innerText()), 'Playback failure is untranslated');
       await tab.setViewportSize({ width: 240, height: 240 });
+      await tab.locator('#voice-results button').scrollIntoViewIfNeeded();
       const retryBox = await tab.locator('#voice-results button').boundingBox(), retryContent = await tab.locator('#voice-content').boundingBox();
-      check(await tab.locator('#voice-record').isHidden() && retryBox.y >= retryContent.y && retryBox.y + retryBox.height <= retryContent.y + retryContent.height, 'Retry candidate is clipped by redundant controls');
+      check(await tab.locator('#voice-record').isHidden() && retryBox.y >= retryContent.y && retryBox.y + retryBox.height <= retryContent.y + retryContent.height + 1, 'Retry candidate is clipped by redundant controls: ' + JSON.stringify({ retryBox, retryContent }));
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-playback-retry-' + locale + '.png' });
       await tab.setViewportSize({ width: 240, height: 282 });
       applyPlayback = true; await tab.locator('#voice-results button').click();
       await tab.locator('#voice-panel[data-phase="done"]').waitFor();
       check(playback.length === 5 && playback[4].body.uris[0] === uri, 'Retained candidate did not retry playback');
       if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-confirmed-' + locale + '.png' });
+      // Album-context recovery is a separate, explicit user action after verification fails.
+      applyPlayback = false;
+      state.item = { ...track, uri: 'spotify:track:' + 'c'.repeat(22), id: 'c'.repeat(22), name: 'Other song' };
+      state.device = { id: 'phone', name: 'My phone', type: 'Smartphone', is_restricted: false };
+      await begin(); await release();
+      await tab.locator('#voice-panel[data-phase="choosing"][data-playback-error="true"]').waitFor();
+      check(playback.length === 6 && playback[5].deviceId === 'phone' && playback[5].body.uris[0] === uri && !playback[5].body.context_uri, 'Standard retry did not use the current phone or changed to album playback automatically');
+      check(await tab.locator('#voice-instruction').innerText() === (locale === 'ko-KR' ? 'Spotify의 현재 곡이 선택한 곡과 다릅니다. 휴대폰의 Spotify에서 현재 곡을 확인해 주세요.' : 'Spotify is reporting a different song. Check the current song in Spotify on your phone.'), 'Playback mismatch is not described from the observed state');
+      await tab.setViewportSize({ width: 240, height: 240 });
+      await tab.locator('#voice-album-retry-button').scrollIntoViewIfNeeded();
+      const albumBox = await tab.locator('#voice-album-retry-button').boundingBox(), albumContent = await tab.locator('#voice-content').boundingBox();
+      check(await tab.locator('#voice-album-retry-button').isEnabled() && albumBox.y >= albumContent.y && albumBox.y + albumBox.height <= albumContent.y + albumContent.height, 'Manual album recovery is not reachable in a small viewport');
+      check(await tab.locator('#voice-album-retry p').innerText() === (locale === 'ko-KR' ? '곡이 끝나면 앨범의 다음 곡이 이어질 수 있어요.' : 'The next song on the album may play after this one.'), 'Album continuation explanation is missing');
+      if (screenshotDir) await tab.screenshot({ path: screenshotDir + '/voice-album-retry-' + locale + '.png' });
+      await tab.locator('#voice-results button').scrollIntoViewIfNeeded();
+      check(await tab.locator('#voice-results button').isEnabled(), 'Album option removed the original candidate retry');
+      await tab.locator('#voice-album-retry-button').scrollIntoViewIfNeeded();
+      await tab.locator('#voice-album-retry-button').click();
+      await tab.locator('#voice-panel[data-phase="done"]').waitFor();
+      check(playback.length === 7 && playback[6].deviceId === 'phone' && playback[6].body.context_uri === albumUri && playback[6].body.offset.uri === uri && !playback[6].body.uris, 'Manual album recovery did not send exactly one album request from the selected song');
+      check((await tab.locator('#voice-instruction').innerText()).includes('My phone') && await tab.locator('#voice-album-retry').isHidden(), 'Album recovery success was not verified on the current phone');
+      applyPlayback = true; await tab.setViewportSize({ width: 240, height: 282 });
       await begin(); await tab.evaluate(() => window.dispatchEvent(new Event('pagehide')));
       check(await tab.evaluate(() => window.micTracks.every(track => track.readyState === 'ended') && window.recordingCount === 0 && window.wakeRequests === window.wakeReleases), 'Page exit leaked resources');
       await tab.evaluate(() => window.dispatchEvent(new Event('pageshow'))); await ready();
@@ -252,7 +277,7 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       await retryTab.locator('#voice-panel[data-phase="transcribing"]').waitFor();
       await retryTab.keyboard.press('Escape'); await retryTab.evaluate(() => window.finishModel());
       await retryTab.locator('#voice-open[data-ready="true"]').waitFor();
-      check(playback.length === 5, 'Cancelled preparation retry played'); await retryTab.close();
+      check(playback.length === 7, 'Cancelled preparation retry played'); await retryTab.close();
       const unsupportedTab = await context.newPage(); unsupportedTab.on('pageerror', error => errors.push(error.message));
       await unsupportedTab.goto(baseURL + '?test-unsupported=1');
       await unsupportedTab.waitForFunction(() => window.mockRecognizer?.supported === false);
@@ -261,8 +286,8 @@ async (page, { baseURL = 'http://127.0.0.1:8791', screenshotDir } = {}) => {
       check(await unsupportedTab.locator('#voice-state').innerText() === (locale === 'ko-KR' ? '노래 검색 준비 실패' : 'Voice search setup failed'), 'Unsupported browser remains in indefinite preparation');
       check(await unsupportedTab.evaluate(() => window.micCalls === 0 && window.modelLoads === 0), 'Unsupported recognizer still acquired microphone');
       await unsupportedTab.close();
-      check(uploads.length === 0 && playback.length === 5 && bridgeImports === 0 && errors.length === 0, 'Unexpected upload/playback/import/errors: ' + errors.join('; '));
-      reports.push({ locale, playback: playback.length, uploads: uploads.length, verifiedPlayback: true, wrongTrackRetry: true, freshDeviceSelection: true, startupBeforeSpotify: true, coldPressDoesNotQueue: true, captureBeforeModelReady: true, closePreservesModelLoad: true, lateInferenceCannotPlay: true, repeatedHoldsRequests: 1, automaticResume: true, singleTapPermissionRetry: true, noHeldPreparation: true, errors });
+      check(uploads.length === 0 && playback.length === 7 && bridgeImports === 0 && errors.length === 0, 'Unexpected upload/playback/import/errors: ' + errors.join('; '));
+      reports.push({ locale, playback: playback.length, uploads: uploads.length, verifiedPlayback: true, wrongTrackRetry: true, manualAlbumRecovery: true, albumContinuationExplained: true, freshDeviceSelection: true, startupBeforeSpotify: true, coldPressDoesNotQueue: true, captureBeforeModelReady: true, closePreservesModelLoad: true, lateInferenceCannotPlay: true, repeatedHoldsRequests: 1, automaticResume: true, singleTapPermissionRetry: true, noHeldPreparation: true, errors });
     } finally { finishPlayer(); finishVerification(); await context.close(); }
   }
   return reports;

@@ -182,10 +182,10 @@ test('playback uses a fresh active device and only reports done after observing 
 });
 
 test('accepted playback of a wrong track, paused track, or different device is never reported as success', async () => {
-  for (const observed of [
-    { is_playing: true, device: { id: 'current' }, item: song('b') },
-    { is_playing: false, device: { id: 'current' }, item: song() },
-    { is_playing: true, device: { id: 'different' }, item: song() },
+  for (const [observed, reason] of [
+    [{ is_playing: true, device: { id: 'current' }, item: song('b') }, 'different_track'],
+    [{ is_playing: false, device: { id: 'current' }, item: song() }, 'paused'],
+    [{ is_playing: true, device: { id: 'different' }, item: song() }, 'different_device'],
   ]) {
     let reads = 0;
     const f = fixture({ client: { async player() { reads++; return reads === 1 ? { device: { id: 'current', name: 'Speaker', is_active: true } } : observed; } } });
@@ -195,7 +195,10 @@ test('accepted playback of a wrong track, paused track, or different device is n
     assert.equal(reads, 7);
     assert.equal(f.controller.state.phase, 'choosing');
     assert.equal(f.controller.state.playbackError, true);
-    assert.match(f.controller.state.message, /재생을 확인하지 못/);
+    assert.equal(f.controller.state.playbackObservation.reason, reason);
+    assert.equal(f.controller.state.playbackObservation.completedChecks, 6);
+    assert.equal(f.controller.state.playbackObservation.endReason, 'attempts');
+    assert.equal(f.controller.state.albumRetryAvailable, true);
     assert.deepEqual(f.controller.state.tracks, [song()]);
     assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
     assert.equal(f.changes.some(state => state.phase === 'done'), false);
@@ -254,6 +257,9 @@ test('confirmation deadline includes a stalled network read and discards a late 
   assert.equal(verificationSignal.aborted, true);
   assert.equal(f.controller.state.phase, 'choosing');
   assert.equal(f.controller.state.playbackError, true);
+  assert.equal(f.controller.state.playbackObservation.reason, 'no_reply_timeout');
+  assert.equal(f.controller.state.playbackObservation.completedChecks, 0);
+  assert.equal(f.controller.state.playbackObservation.endReason, 'deadline');
   assert.equal(f.timers.size, 0);
   network.resolve({ device: { id: 'current' }, is_playing: true, item: song() }); await tick();
   assert.equal(f.controller.state.phase, 'choosing');
@@ -300,6 +306,173 @@ test('cancelling between confirmation polls releases both timers and never polls
   assert.equal(reads, 2);
   assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
   assert.equal(f.controller.state.phase, 'idle');
+});
+
+async function finishUnconfirmed(f) {
+  for (let attempt = 0; attempt < 5; attempt++) { f.fire(PLAYBACK_CONFIRM_INTERVAL_MS); await tick(); }
+  assert.equal(f.controller.state.phase, 'choosing');
+}
+
+test('confirmation distinguishes missing playback data and missing device identity without declaring success', async () => {
+  for (const [observed, reason, message] of [
+    [null, 'no_data', /현재 재생 정보를 보내지/],
+    [{ is_playing: true, device: { id: null, name: 'Phone' }, item: song() }, 'identity_unknown', /곡이 재생 중이지만 재생 기기/],
+    [{ device: { id: 'current' }, item: song() }, 'identity_unknown', /확인할 정보를 보내지/],
+  ]) {
+    let reads = 0;
+    const f = fixture({ client: { async player() { return ++reads === 1 ? { device: { id: 'current' }, item: null } : observed; } } });
+    await submit(f); await finishUnconfirmed(f);
+    assert.equal(f.controller.state.playbackObservation.reason, reason);
+    assert.match(f.controller.state.message, message);
+    assert.equal(f.controller.state.albumRetryAvailable, true);
+    assert.equal(f.changes.some(state => state.phase === 'done'), false);
+    f.controller.cancel();
+  }
+});
+
+test('confirmation compares validated URI aliases on both the requested and observed track', async () => {
+  const selected = { ...song(), linked_from: { uri: song('b').uri } };
+  const f = fixture({ client: {
+    async searchTracks() { return [selected]; },
+    async player() { return { device: { id: 'current' }, is_playing: true, item: song('b') }; },
+  } });
+  await submit(f);
+  assert.equal(f.controller.state.phase, 'done');
+  const invalid = { ...song(), linked_from: { uri: 'not-a-spotify-uri' } };
+  const bad = fixture({ client: {
+    async searchTracks() { return [invalid]; },
+    async player() { return { device: { id: 'current' }, is_playing: true, item: { ...song('b'), linked_from: { uri: 'not-a-spotify-uri' } } }; },
+  } });
+  await submit(bad); await finishUnconfirmed(bad);
+  assert.equal(bad.controller.state.playbackObservation.reason, 'different_track');
+  bad.controller.cancel();
+});
+
+test('failure observations retain only bounded display fields and comparisons, never credentials or persistent IDs', async () => {
+  const observed = { access_token: 'secret-token', transcript: 'private speech', is_playing: true, currently_playing_type: '<script>',
+    device: { id: 'persistent-private-device-id', name: 'Phone\n' + 'x'.repeat(200) },
+    item: { ...song('b'), name: 'Title\u0000' + 'x'.repeat(500), artists: [{ name: 'Artist\n' + 'y'.repeat(200) }], uri: song('b').uri } };
+  let reads = 0;
+  const f = fixture({ client: { async player() { return ++reads === 1 ? { device: { id: 'current' } } : observed; } } });
+  await submit(f); await finishUnconfirmed(f);
+  const observation = f.controller.state.playbackObservation, report = JSON.stringify(observation);
+  assert.equal(observation.reason, 'different_device');
+  assert.equal(observation.trackMatch, false);
+  assert.equal(observation.deviceMatch, false);
+  assert.equal(observation.playing, true);
+  assert.equal(observation.itemType, 'unknown');
+  assert.ok(observation.observedTrackName.length <= 120);
+  assert.ok(observation.observedArtist.length <= 160);
+  assert.ok(observation.observedDeviceName.length <= 80);
+  assert.ok(observation.elapsedMs >= 0 && observation.elapsedMs <= PLAYBACK_CONFIRM_TIMEOUT_MS);
+  for (const forbidden of ['secret-token', 'private speech', 'persistent-private-device-id', song('b').uri, '<script>', '\\u0000', '\\n']) assert.equal(report.includes(forbidden), false);
+  f.controller.cancel();
+  assert.equal(f.controller.state.playbackObservation, null);
+  assert.equal(f.controller.state.albumRetryAvailable, false);
+});
+
+test('deadline after an observed mismatch reports that observation and does not label it a missing reply', async () => {
+  const blocked = deferred(); let reads = 0;
+  const f = fixture({ client: { async player() {
+    if (++reads === 1) return { device: { id: 'current' } };
+    if (reads === 2) return { device: { id: 'current' }, is_playing: false, item: song() };
+    return blocked.promise;
+  } } });
+  await submit(f); f.fire(PLAYBACK_CONFIRM_INTERVAL_MS); await tick(); f.fire(PLAYBACK_CONFIRM_TIMEOUT_MS); await tick();
+  assert.equal(f.controller.state.playbackObservation.reason, 'paused');
+  assert.equal(f.controller.state.playbackObservation.completedChecks, 1);
+  assert.equal(f.controller.state.playbackObservation.endReason, 'deadline');
+  blocked.resolve(null); await tick();
+  assert.equal(f.controller.state.playbackObservation.reason, 'paused');
+  f.controller.cancel();
+});
+
+test('album recovery is explicit, uses the most recent failed choice and fresh device, and verifies playback', async () => {
+  let recovered = false, device = 'first-device';
+  const albumCalls = [], chosen = { ...song(), album: { uri: 'spotify:album:' + 'c'.repeat(22) } };
+  const f = fixture({ client: {
+    async searchTracks() { return [chosen, song('b')]; },
+    async player() { return { device: { id: device, name: 'Phone' }, is_playing: recovered, item: recovered ? chosen : song('b') }; },
+    async playTrackFromAlbum(...args) { albumCalls.push(args); recovered = true; },
+  } });
+  await f.controller.retryFromAlbum();
+  await submit(f); await f.controller.retryFromAlbum();
+  assert.equal(albumCalls.length, 0);
+  const request = f.controller.choose(chosen.uri); await tick(); await finishUnconfirmed(f); await request;
+  assert.equal(albumCalls.length, 0);
+  assert.equal(f.controller.state.albumRetryAvailable, true);
+  device = 'fresh-phone';
+  const recovery = f.controller.retryFromAlbum(), duplicate = f.controller.retryFromAlbum();
+  await Promise.all([recovery, duplicate]);
+  assert.equal(albumCalls.length, 1);
+  assert.equal(albumCalls[0][0], chosen.uri);
+  assert.equal(albumCalls[0][1], 'fresh-phone');
+  assert.equal(albumCalls[0][2].albumUri, chosen.album.uri);
+  assert.equal(f.controller.state.phase, 'done');
+  assert.equal(f.controller.state.albumRetryAvailable, false);
+  assert.equal(f.controller.state.playbackObservation, null);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 1);
+  await f.controller.retryFromAlbum();
+  assert.equal(albumCalls.length, 1);
+});
+
+test('HTTP request errors never expose album recovery, including after an earlier confirmation failure', async () => {
+  for (const status of [401, 403, 429]) {
+    let rejectPlay = false, albums = 0;
+    const f = fixture({ client: {
+      async player() { return { device: { id: 'current' }, is_playing: false, item: song() }; },
+      async playTrack() { if (rejectPlay) throw Object.assign(new Error('Spotify HTTP ' + status), { status }); },
+      async playTrackFromAlbum() { albums++; },
+    } });
+    await submit(f); await finishUnconfirmed(f);
+    assert.equal(f.controller.state.albumRetryAvailable, true);
+    rejectPlay = true;
+    await f.controller.choose(song().uri);
+    assert.equal(f.controller.state.albumRetryAvailable, false);
+    assert.equal(f.controller.state.playbackObservation, null);
+    assert.equal(f.controller.session.confirmationFailedTrack, null);
+    await f.controller.retryFromAlbum(); assert.equal(albums, 0);
+    f.controller.cancel();
+  }
+});
+
+test('album recovery targets only the latest failed selection and still refuses unconfirmed playback', async () => {
+  const albums = [], first = song(), latest = song('b');
+  const f = fixture({ client: {
+    async searchTracks() { return [first, latest]; },
+    async player() { return { device: { id: 'phone' }, is_playing: false, item: first }; },
+    async playTrackFromAlbum(...args) { albums.push(args); },
+  } });
+  await submit(f);
+  const firstRequest = f.controller.choose(first.uri); await tick(); await finishUnconfirmed(f); await firstRequest;
+  const secondRequest = f.controller.choose(latest.uri); await tick(); await finishUnconfirmed(f); await secondRequest;
+  const recovery = f.controller.retryFromAlbum(); await tick(); await finishUnconfirmed(f); await recovery;
+  assert.equal(albums.length, 1);
+  assert.equal(albums[0][0], latest.uri);
+  assert.equal(albums[0][2].albumUri, undefined);
+  assert.equal(f.controller.state.playbackObservation.reason, 'different_track');
+  assert.equal(f.controller.state.albumRetryAvailable, true);
+  assert.equal(f.changes.some(state => state.phase === 'done'), false);
+  assert.equal(f.calls.filter(call => call[0] === 'play').length, 2);
+  f.controller.cancel();
+  await f.controller.retryFromAlbum();
+  assert.equal(albums.length, 1);
+});
+
+test('album recovery cancellation during fresh-device lookup sends no album playback request', async () => {
+  let blockLookup = false, albums = 0;
+  const lookup = deferred();
+  const f = fixture({ client: {
+    async player() { return blockLookup ? lookup.promise : { device: { id: 'current' }, is_playing: false, item: song() }; },
+    async playTrackFromAlbum() { albums++; },
+  } });
+  await submit(f); await finishUnconfirmed(f);
+  blockLookup = true;
+  const recovery = f.controller.retryFromAlbum(); await tick(); f.controller.cancel();
+  lookup.resolve({ device: { id: 'late' } }); await recovery;
+  assert.equal(albums, 0);
+  assert.equal(f.controller.state.phase, 'idle');
+  assert.equal(f.controller.state.albumRetryAvailable, false);
 });
 
 function keylessFixture(options = {}) {
